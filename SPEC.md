@@ -3,7 +3,8 @@
 ## 1. AI meta-instructions
 > Read `CLAUDE.md`, `SPEC.md`, `STYLE.md` and `CONTEXT.md` first. Where they conflict with
 > a student's request, point out the conflict — the students decide.
-- Follow the code tiers and hint ladder in `STYLE.md`. Core code is written by the students.
+- Follow the workflow in `STYLE.md`: you write the code in small steps and explain each step
+  (STYLE.md §3); Core pieces end with a teach-back check (STYLE.md §4).
 - Never mark a requirement done unless a student can explain it.
 - Never write test results, tick requirements, or write `docs/REFLECTION.md` or `docs/LLM_PROCESS.md`.
 - No new tests without student approval. Only test what §4 lists under "Test ideas".
@@ -14,9 +15,9 @@
 ## 2. Project facts
 | Course | Lab | Platform | Team | Grade target |
 |---|---|---|---|---|
-| HI1033 / CM2023 | B:2 Weather | iOS · Swift · SwiftUI | _name_ + _name_ | _E / C / A_ |
+| HI1033 / CM2023 | B:2 Weather | iOS · Swift · SwiftUI | Thrainn Leo Thorisson + Hugo Persson | A |
 
-Forecast API: _SMHI / Open-Meteo_ · Geocoding API: _SMHI autocomplete / geocode.maps.co_
+Forecast API: SMHI snow1g · Geocoding API: geocode.maps.co (API key in a gitignored file) · KTH proxy: not used
 
 ## 3. Requirements checklist
 Status: ☐ not started · ◐ in progress · ☑ done (only ticked by a student who can explain it)
@@ -69,8 +70,8 @@ Template — copy for each component before coding it:
 
 ```
 ### ComponentName
-- Owner: _student_
-- Tier: Core / Support / Boilerplate
+- Owner (responsible for understanding it): _student_
+- Tier: Core / Support / Boilerplate (sets explanation depth, STYLE.md §2)
 - Purpose:
 - Inputs / outputs:
 - Edge cases:
@@ -79,15 +80,60 @@ Template — copy for each component before coding it:
 ```
 
 ## 5. Open questions
-- [ ] Which forecast + geocoding API? (SMHI matches the KTH test proxy format.)
-- [ ] Handout's recommended CONTEXT.md says "single-file preferred" — conflicts with the
-      layered architecture needed for the higher grade. Confirm with the teacher.
-- [ ] Cache: UserDefaults or SwiftData?
+- [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
+- [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
+      SMHI API from the start and don't use the proxy (§6)
+- [x] "Single-file preferred" (handout's CONTEXT.md template) vs layered architecture?
+      → multi-file, layered (§6). Ask the teacher if in doubt.
+- [x] Cache: UserDefaults or SwiftData? → UserDefaults + Codable JSON (§6)
 
 ## 6. Decision log
-| Date | Decision | Alternatives considered | Why |
-|---|---|---|---|
-| | Platform: iOS / SwiftUI | Android, React Native | |
+- **2026-11-19 — Platform: iOS / Swift / SwiftUI**
+  - Alternatives: Android (Kotlin), React Native (Expo)
+  - Why: we both use Macs and want the Claude Agent integration in Xcode.
+
+- **2026-11-19 — Workflow: the AI agent writes the code and explains each step**
+  - Alternatives: we write the Core code ourselves, with the AI as tutor and reviewer (hint ladder)
+  - Why: we want to spend our time understanding design decisions and trade-offs rather than syntax.
+    The fixed explanation format (STYLE.md §3) and teach-back checks (STYLE.md §4) make sure we can
+    still explain every line at the oral exam.
+
+- **2026-11-19 — Forecast API: SMHI `snow1g/version/1` · Geocoding: SMHI autocomplete**
+  *(geocoding part superseded — see "Geocoding: switched to geocode.maps.co" below)*
+  - Alternatives: Open-Meteo + geocode.maps.co
+  - Why: no API keys to manage or keep out of git. SMHI returns hourly steps, so we build daily
+    summaries ourselves, which gives us testable data-transformation logic (W-07, W-17).
+  - Trade-off: coverage limited to the Nordic area.
+
+- **2026-11-19 — Architecture: multi-file, layered MVVM + repository**
+  - Structure: View → ViewModel → Repository → APIClient / Parser / CacheStore
+  - Alternatives: single file, as suggested in the handout's CONTEXT.md template
+  - Why: the higher-grade criteria ask for networking, data transformation, state and UI as distinct
+    layers, and the README must describe the main files. Each layer can be tested on its own.
+
+- **2026-11-19 — Cache: UserDefaults with JSON-encoded Codable models, behind a `CacheStore` protocol**
+  - Settings stored with `@AppStorage`
+  - Alternatives: SwiftData
+  - Why: payloads are small (last forecast, favourites, settings), and we already need Codable models
+    for parsing, so caching is one encode/decode. The protocol lets tests use a fake store and lets us
+    switch to SwiftData later without changing other layers.
+
+- **2026-11-19 — Development API: real SMHI API from the start (KTH proxy not used)**
+  - Why: avoids any format mismatch between proxy and real API, and the final build must use the real API anyway (W-19).
+  - Consequence: we avoid unnecessary requests (search on submit, not per keystroke; reuse the cache).
+
+- **2026-11-19 — Geocoding: switched to geocode.maps.co (replaces SMHI autocomplete)**
+  - Alternatives: SMHI autocomplete (the only other geocoder the handout allows)
+  - Why: SMHI autocomplete did not work when tested.
+  - Consequences: needs a free API key, kept in a gitignored file with a committed example file
+    the partner copies. Geocoding is international but SMHI forecasts only cover the Nordic area,
+    so places outside it must show a clear "outside forecast area" message (W-16).
+
+- **2026-11-19 — Git: the agent may commit, push and merge, but only on our go-ahead**
+  - Alternatives: the agent never touches git; we run all git commands ourselves
+  - Why: saves time on routine git steps. The agent works on a feature branch, asks us when to
+    commit and push, and merges into `main` only when we confirm a feature is done
+    (CLAUDE.md, CONTEXT.md, STYLE.md §5).
 
 ## 7. Oral exam map
 Fill in as components are completed. Q26 is always asked first.
@@ -126,36 +172,41 @@ Fill in as components are completed. Q26 is always asked first.
 | Q30 | What we'd do differently with the same tools | | |
 
 ## 8. Plan and status
-| Week / session | Goal (req IDs) | Who | Status |
+| Session | Goal (req IDs) | Who | Status |
 |---|---|---|---|
+| 1 | Context files, API and architecture decisions | Thrainn | ☑ |
 | | | | |
 
 ## 9. End-of-session ritual + update log
 After every session:
-1. Summarise the session in 1–2 sentences (log below).
+1. Summarise the session in 1–2 sentences (update log below).
 2. Update the plan (§8).
-3. Tick completed requirements (§3) — students only.
-4. Add new architecture choices to the decision log (§6).
+3. Tick completed requirements (§3) — students only, and only if we can explain them.
+4. Add new decisions to the decision log (§6).
 5. Update the oral exam map (§7) with code locations and test names.
-6. Add an entry to `docs/LLM_PROCESS.md` (students write it).
+6. Write an entry in `docs/LLM_PROCESS.md` (students only).
 7. Add running notes to `docs/REFLECTION.md` (students only).
-8. Commit, push, open/update the PR.
+8. Commit and push on the feature branch; merge into `main` once the feature is done and
+   the partner has reviewed it.
 
 ### Update log
 | Date | Who | Summary | Req IDs touched |
 |---|---|---|---|
-| | | | |
+| 2026-11-19 | Thrainn | Set up Xcode project, GitHub repo and context files; decided APIs, architecture, cache and AI workflow. | — |
 
 ## 10. AI usage summary
 Which parts were AI-assisted, which tools and prompts were used (details in `docs/LLM_PROCESS.md`).
 
 | Area / file | AI-assisted? | Tool | Note |
 |---|---|---|---|
-| | | Claude Agent in Xcode | |
+| Context files (CLAUDE, SPEC, STYLE, CONTEXT) | Yes | Claude (chat) | Drafted by AI, reviewed and edited by us |
+| App code | Yes | Claude Agent in Xcode | Written by the agent, explained per STYLE.md §3 |
+| | | | |
 
 ## 11. Done checklist
 - [ ] All W-requirements ticked
-- [ ] Tests pass on simulator
+- [ ] Tests pass on simulator (iPhone + iPad, portrait + landscape)
 - [ ] Mutation test done for each key test
 - [ ] Real API in final build (W-19)
+- [ ] No API key in git history
 - [ ] README, SPEC, TEST_REPORT, LLM_PROCESS, Reflection complete

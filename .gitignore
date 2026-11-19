@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Xcode user data and build output
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Secrets — the geocode.maps.co API key must never be committed.
+# Commit only the example file (e.g. Secrets.example.xcconfig), never the real one.
+Secrets.xcconfig
+Secrets.plist
+*.secret

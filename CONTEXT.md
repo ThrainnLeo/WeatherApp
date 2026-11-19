@@ -18,16 +18,27 @@
   Test on both iPhone and iPad simulators, portrait and landscape.
 
 ## APIs
-Choose one forecast API + one geocoding API (record the choice in SPEC.md §6 Decision log).
+Chosen APIs (see SPEC.md §6 Decision log for why):
 
-| Purpose | Option | URL |
+| Purpose | API | URL |
 |---|---|---|
-| Forecast (international) | Open-Meteo | https://open-meteo.com/en/docs |
-| Forecast (Sweden) | SMHI | https://opendata-download-metfcst.smhi.se/ |
-| Geocoding (Sweden) | SMHI autocomplete | `https://www.smhi.se/wpta/backend_solr/autocomplete/search/{place}` |
-| Geocoding (international) | geocode.maps.co | `https://geocode.maps.co/search?q={place}` |
+| Forecast | SMHI (snow1g) | `https://opendata-download-metfcst.smhi.se/api/category/snow1g/version/1/geotype/point/lon/{lon}/lat/{lat}/data.json` |
+| Geocoding | geocode.maps.co | `https://geocode.maps.co/search?q={place}&api_key={key}` |
 
-**Development test server (KTH proxy, SMHI format) — use this while developing to avoid rate limits:**
+- The API key lives in a gitignored file and is never committed.
+- SMHI only covers the Nordic area. Places outside it (e.g. "Paris") must show a clear
+  message, not a crash or a blank screen.
+- Not used: Open-Meteo, SMHI autocomplete (did not work when tested), KTH proxy.
+
+**Notes (checked 2026-11-19):**
+- SMHI retired its old forecast API (`pmp3g/version/2`) on 31 March 2026. The current one is
+  `https://opendata-download-metfcst.smhi.se/api/category/snow1g/version/1/geotype/point/lon/{lon}/lat/{lat}/data.json`.
+  Each time step has `time` and a flat `data` object (the old format used `validTime` and a `parameters` array).
+- geocode.maps.co now requires a free API key (`api_key` parameter). The key lives in
+  a file listed in `.gitignore` and is never committed (exact mechanism decided when we build W-08).
+
+**Development test server (KTH proxy) — not used.** It still serves the old pmp3g format as a
+fixed 2021 snapshot, so we develop against the real SMHI API (see SPEC.md §6). Kept for reference:
 - Forecast: `https://maceo.sth.kth.se/weather/forecast?lonLat=lon/14.333/lat/60.383`
 - Search:   `https://maceo.sth.kth.se/weather/search?location=Sigfridstorp`
 
@@ -44,7 +55,9 @@ Inspect every JSON response in a browser before writing parsing code.
 - Merge via Pull Request; the *other* partner reviews (doubles as oral-exam prep).
 - Avoid both partners changing project settings (`project.pbxproj`) at the same time.
   Adding Swift files inside the synced folders does **not** touch it.
-- The AI agent never commits or pushes. Humans do.
+- The AI agent works on a feature branch, never directly on `main`. It commits and pushes
+  only when we say so, and asks us from time to time whether we want to. When a feature's
+  code is done, it merges the branch into `main` after we confirm.
 
 ## Language
 All code, comments, commit messages and documentation in English.
