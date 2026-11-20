@@ -79,6 +79,46 @@ Template — copy for each component before coding it:
 - Requirements: W-xx
 ```
 
+> Specs below approved by the students on 2026-11-20.
+
+### SMHIForecastDTO
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: mirror the SMHI snow1g JSON exactly, so decoding is mechanical and all
+  interpretation happens in `ForecastParser`.
+- Inputs / outputs: raw JSON `Data` → `SMHIForecastDTO` (nested `TimeStep`, `StepData`, `Geometry`).
+  Only the fields we use are declared; all others are ignored by `Decodable`.
+- Edge cases: weather values are optional, because a missing key must not fail the whole
+  response; `time` is required, because a step without a time is meaningless.
+- Test ideas: covered through `ForecastParser` tests.
+- Requirements: W-05, W-12
+
+### Forecast (domain models: `Forecast`, `ForecastStep`, `WeatherCondition`)
+- Owner (responsible for understanding it): _student_
+- Tier: Support (`WeatherCondition` text/icon mapping: Boilerplate)
+- Purpose: the app's own representation of a forecast, independent of the SMHI JSON.
+  Views, ViewModels and the cache only ever see these types.
+- Inputs / outputs: created by `ForecastParser`; `Codable` so the cache can store them (W-09).
+- Edge cases: `WeatherCondition.unknown` for symbol codes outside 1–27; optional extras
+  (gust, wind direction, precipitation probability, humidity) can be `nil`.
+- Test ideas: `WeatherCondition(symbolCode:)` maps 1, 27 and an unknown code correctly.
+- Requirements: W-06, W-07 (input for grouping), W-09, W-12
+
+### ForecastParser
+- Owner (responsible for understanding it): _student_
+- Tier: Core
+- Purpose: turn SMHI JSON into a `Forecast`. The only place that knows about SMHI's format.
+- Inputs / outputs: `parse(_ data: Data) throws -> Forecast`. Throws `ForecastParserError`
+  (`.invalidJSON`, `.noUsableTimeSteps`).
+- Edge cases: invalid or non-JSON body (e.g. an HTML error page) → `.invalidJSON`;
+  SMHI's missing-value marker `9999` → `nil`; a step without temperature or symbol is skipped;
+  no usable steps → `.noUsableTimeSteps`; steps returned sorted by time; precipitation is the
+  amount over the step's interval (1 h at first, later 3/6/12 h), so the interval start is kept.
+- Test ideas: parses the real Stockholm sample (step count, first step's values, dates in UTC);
+  `9999` becomes `nil`; step missing temperature is skipped; steps given in reverse order come
+  back sorted; non-JSON → `.invalidJSON`; empty `timeSeries` → `.noUsableTimeSteps`.
+- Requirements: W-05, W-12, W-17
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
@@ -141,9 +181,9 @@ Fill in as components are completed. Q26 is always asked first.
 | # | Question (short) | Code location | Test / req |
 |---|---|---|---|
 | Q1 | Function that makes the API request — where, what does it return? | | |
-| Q2 | How JSON is parsed into the model | | |
-| Q3 | Which fields are used / ignored, and why | | |
-| Q4 | HTTP 200 but JSON missing an expected field | | |
+| Q2 | How JSON is parsed into the model | ForecastParser.parse| |
+| Q3 | Which fields are used / ignored, and why | The 8 fields in StepData. The 16 cloud, pressure and visibility fields are ignored because no screen needs them.| |
+| Q4 | HTTP 200 but JSON missing an expected field | Optional values become nil. A missing time gives .invalidJSON. A missing temperature or symbol skips the step.| |
 | Q5 | Full data flow: "search" pressed → forecast on screen | | |
 | Q6 | Caching: what is stored, when refreshed | | |
 | Q7 | Where fetched data lives at runtime (declaration) | | |
@@ -160,11 +200,11 @@ Fill in as components are completed. Q26 is always asked first.
 | Q18 | Hardest error case | | |
 | Q19 | MVVM layers in the code | | |
 | Q20 | Why the network call is not in the View | | |
-| Q21 | Where testable logic is separated from UI | | |
+| Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network.| |
 | Q22 | How navigation works; why the ViewModel doesn't navigate | | |
 | Q23 | One requirement ID → implementing code | | |
 | Q24 | Architecture changes for adding hourly forecast | | |
-| Q25 | A function the AI helped write — line by line | | |
+| Q25 | A function the AI helped write — line by line | parse and makeStep are good candidates| |
 | Q26 | AI meta-instructions + one requirement → code | §1 + | |
 | Q27 | Where we pushed back on the AI, and why | | |
 | Q28 | How AI code was verified — show a test | | |
