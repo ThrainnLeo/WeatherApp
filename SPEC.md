@@ -190,6 +190,44 @@ Template — copy for each component before coding it:
   HTTP 500 with cache → cached result with `staleReason == .http(500)`.
 - Requirements: W-05, W-09, W-10, W-15, W-16, W-17
 
+> Specs below approved by the students on 2026-11-22 (session 4).
+
+### DailyForecast + GroupedForecast (models)
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: the shapes the screens need. `GroupedForecast` = `current: ForecastStep?`,
+  `today: [ForecastStep]` (hourly), `days: [DailyForecast]` (the next 7 days after today).
+  `DailyForecast` = `date` (local midnight), `minTemperature`, `maxTemperature`, `condition`,
+  `precipitation: Double?` (mm), `maxWindSpeed: Double?`, `steps: [ForecastStep]` (for the detail
+  screen, W-02).
+- Inputs / outputs: created by `ForecastGrouper`; not cached (they depend on "now").
+- Edge cases: `precipitation` / `maxWindSpeed` are `nil` when no step has a value.
+- Test ideas: covered through `ForecastGrouper` tests.
+- Requirements: W-01, W-02, W-06, W-07
+
+### ForecastGrouper
+- Owner (responsible for understanding it): _student_
+- Tier: Core (data transformation)
+- Purpose: turn a `Forecast` (UTC steps) into "current + hourly today + daily for the next 7 days",
+  using calendar days in the user's time zone.
+- Inputs / outputs: `ForecastGrouper(calendar:)`, `group(_ forecast: Forecast, now: Date) -> GroupedForecast`.
+  The calendar (with the device's time zone) and `now` are injected so tests are repeatable.
+- Rules: steps before the start of the current hour are ignored (old cached data);
+  `current` = first remaining step; `today` = remaining steps on today's local date;
+  `days` = tomorrow + 6 more days, days without steps skipped; min/max over the day's steps;
+  `condition` = the step closest to 12:00 local time; precipitation is summed per day by the
+  midpoint of each step's interval (a 13:00→01:00 step counts for the day it mostly covers).
+- Edge cases: SMHI times are UTC, so 23:00Z is already the next day in Sweden; daylight-saving
+  days have 23 or 25 hours (handled by `Calendar`, not by adding 24 h); later days have only
+  2–4 steps, so min/max is coarse; late evening `today` can be empty; a cached forecast from
+  days ago can have no steps left for today.
+- Test ideas: a step at 23:00 UTC lands on the next local day; `today` holds only steps from the
+  current hour to local midnight; daily min/max; condition taken from the step nearest 12:00;
+  a 12 h step crossing midnight adds its precipitation to the earlier day; at most 7 days, empty
+  days skipped; steps in the past (old cache) are ignored and `current` is the first remaining step;
+  a daylight-saving day (25 Oct 2026, 25 hours) is grouped correctly.
+- Requirements: W-01, W-06, W-07, W-17
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
@@ -316,10 +354,10 @@ Fill in as components are completed. Q26 is always asked first.
 | Q18 | Hardest error case | Candidate: "HTTP 200 but broken JSON while a cache exists": `WeatherRepository.fetchFresh` saves only after parsing succeeds, so the good cache survives | W-10 · `invalidJSONWithCacheReturnsCacheAndKeepsIt` |
 | Q19 | MVVM layers in the code | | |
 | Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel.| |
-| Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network.| |
+| Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network. A pure function with no UI | |
 | Q22 | How navigation works; why the ViewModel doesn't navigate | | |
 | Q23 | One requirement ID → implementing code | | |
-| Q24 | Architecture changes for adding hourly forecast | | |
+| Q24 | Architecture changes for adding hourly forecast | the grouper already produces hourly data for today, so the architecture change would be in this file.| |
 | Q25 | A function the AI helped write — line by line | parse and makeStep are good candidates| |
 | Q26 | AI meta-instructions + one requirement → code | §1 + | |
 | Q27 | Where we pushed back on the AI, and why | | |
