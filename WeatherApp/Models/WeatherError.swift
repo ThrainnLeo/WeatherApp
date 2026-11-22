@@ -1,6 +1,6 @@
 import Foundation
 
-/// Every way loading a forecast can fail, as the ViewModel sees it.
+/// Every way loading a forecast or searching for a place can fail, as the ViewModel sees it.
 ///
 /// Low-level errors (URLError, HTTP status codes, parser errors) are classified here,
 /// in plain functions that don't need a network, so the rules can be unit tested.
@@ -17,8 +17,14 @@ nonisolated enum WeatherError: Error, Equatable, Sendable {
     case outsideForecastArea
     /// The server answered with a non-2xx status code.
     case http(Int)
-    /// The response could not be turned into a forecast.
+    /// The response could not be turned into a forecast or a list of places.
     case decoding
+    /// No usable geocode.maps.co key in Secrets.plist. Found before any request is sent.
+    case apiKeyMissing
+    /// The server refused the key (HTTP 401 or 403).
+    case apiKeyRejected
+    /// Too many requests in a short time (HTTP 429).
+    case rateLimited
 
     init(_ error: URLError) {
         switch error.code {
@@ -38,9 +44,19 @@ nonisolated enum WeatherError: Error, Equatable, Sendable {
         self = .decoding
     }
 
+    init(_ error: GeocodingParserError) {
+        self = .decoding
+    }
+
     /// Returns `nil` for a successful status (200–299), otherwise the matching error.
     static func fromHTTP(status: Int, body: Data) -> WeatherError? {
         guard !(200...299).contains(status) else { return nil }
+
+        switch status {
+        case 401, 403: return .apiKeyRejected
+        case 429: return .rateLimited
+        default: break
+        }
 
         // SMHI uses 404 both for points outside its area (plain text body) and for
         // malformed URLs (HTML page). Only the first means "outside forecast area";

@@ -6,18 +6,31 @@ enum UserMessages {
         switch error {
         case .offline:
             "You're offline. Connect to the internet and try again."
+        // Neutral wording where the same error can come from SMHI or from the place search.
         case .timeout:
-            "SMHI didn't answer in time. Try again."
+            "The server didn't answer in time. Try again."
         case .outsideForecastArea:
             "SMHI only has forecasts for the Nordic area. Try a place in Sweden or a neighbouring country."
         case .http(let code):
-            "SMHI's server had a problem (error \(code)). Try again later."
+            "The server had a problem (error \(code)). Try again later."
         case .decoding:
-            "The forecast couldn't be read. Try again later."
+            "The answer from the server couldn't be read. Try again later."
         case .network, .cancelled:
-            "Couldn't reach SMHI. Check your connection and try again."
+            "Couldn't reach the server. Check your connection and try again."
+        case .apiKeyMissing:
+            "Place search isn't set up. Add your geocode.maps.co key to Secrets.plist, or search by coordinates."
+        case .apiKeyRejected:
+            "The place search key was rejected. Check the key in Secrets.plist."
+        case .rateLimited:
+            "Too many searches in a short time. Wait a moment and try again."
         }
     }
+
+    static func noPlacesFound(for query: String) -> String {
+        "No places found for “\(query)”."
+    }
+
+    static let emptyPlaceQuery = "Type a place name, e.g. Stockholm."
 
     static func message(for error: CoordinateInputError) -> String {
         switch error {

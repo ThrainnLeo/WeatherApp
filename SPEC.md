@@ -273,6 +273,83 @@ Template — copy for each component before coding it:
 - Test ideas: none automated now (UX scenarios go to TEST_REPORT, W-18).
 - Requirements: W-01, W-06, W-10, W-13, W-16
 
+> Specs below approved by the students on 2026-11-22 (session 5).
+
+### Secrets (API key loading)
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: read the geocode.maps.co key from `WeatherApp/Secrets.plist` (gitignored; copied into
+  the app automatically by the synced folder, no `project.pbxproj` edit). A committed
+  `Secrets.example.plist` at the repo root shows the partner what to create.
+- Inputs / outputs: `Secrets.geocodeMapsAPIKey(in: Bundle) -> String?`.
+- Edge cases: file missing, key empty, or still the placeholder → `nil` (place search shows
+  "not set up"; coordinate search keeps working). The key is inside the built app, so it is
+  hidden from git but not secret from someone with the app; fine for a free lab key.
+- Test ideas: none (needs a bundle; verified by running the app).
+- Requirements: W-08
+
+### MapsCoPlaceDTO + Place (model)
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: `MapsCoPlaceDTO` mirrors one item of the JSON array (`lat`, `lon` — strings —,
+  `display_name`; other fields ignored). `Place` = `name` ("Stockholm"), `detail`
+  ("Stockholms kommun, Stockholm County, Sweden"), `coordinate`. `Codable`/`Hashable` for
+  favourites later (W-03).
+- Edge cases: fields we don't decode (e.g. `osm_id`, documented as a string, elsewhere a number)
+  can't break decoding.
+- Test ideas: covered through `GeocodingParser` tests.
+- Requirements: W-08
+
+### GeocodingParser
+- Owner (responsible for understanding it): _student_
+- Tier: Core (JSON → domain model)
+- Purpose: turn the geocode.maps.co JSON array into `[Place]`.
+- Inputs / outputs: `parse(_ data: Data) throws(GeocodingParserError) -> [Place]`; error `.invalidJSON`.
+- Edge cases: `[]` → empty list (not an error); `lat`/`lon` that aren't numbers or are out of
+  range → that item skipped; `display_name` split at the first comma into name + detail;
+  duplicates removed: two entries count as the same when their full text (name + detail) is
+  identical, because the user can't tell such rows apart (the real "Paris" answer has two
+  "Paris, Île-de-France, France" entries ~2 km apart — changed 2026-11-22, was "same name
+  within ~1 km"); order from the API kept, the first of each duplicate wins.
+- Test ideas: real "Stockholm" response (count, first place's name/detail/coordinate);
+  `[]` → empty; item with `lat: "abc"` skipped; HTML error page → `.invalidJSON`;
+  two Paris entries with identical text but different coordinates → one result.
+- Requirements: W-08, W-12, W-17
+
+### GeocodingClient (protocol) + MapsCoGeocodingClient, PlaceRepository
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: download place matches (client) and turn them into `[Place]` (repository:
+  client → parser, no cache). Base URL in `APIEnvironment`.
+- Inputs / outputs: `searchData(for query: String) async throws(WeatherError) -> Data`;
+  `PlaceRepository.search(_ query:) async throws(WeatherError) -> [Place]` (`@concurrent`).
+- Edge cases: query encoded with `URLComponents` ("Malmö", "Åre", spaces); `limit=10`;
+  missing key → `.apiKeyMissing` without any request; same 15 s timeout and URLError
+  classification as SMHI.
+- Test ideas: none new now (the URL encoding can be checked later if wanted).
+- Requirements: W-08, W-15, W-16
+
+### WeatherError (new cases)
+- Tier: Core (error classification)
+- New cases: `.apiKeyMissing` (no usable key, found before any request), `.apiKeyRejected`
+  (HTTP 401/403), `.rateLimited` (HTTP 429). `fromHTTP` maps those codes for both APIs.
+- Test ideas: 401 → `.apiKeyRejected`; 429 → `.rateLimited`.
+- Requirements: W-16, W-17
+
+### SearchViewModel + SearchView (place mode)
+- Tier: Core (ViewModel state) / Boilerplate (view)
+- Purpose: `inputMode` = `.place` (default) / `.coordinates` (segmented picker). Place mode: one
+  text field → `searchPlaces()` → `placeSearch` = `.idle` · `.searching` · `.results([Place])` ·
+  `.noResults` · `.failed(message)`; tapping a place → `select(_ place:)` → forecast for its
+  coordinate (same path as coordinate search). Forecast header shows the place name, or the
+  coordinates in coordinate mode.
+- Edge cases: empty query → message, no request; no results → "No places found for …";
+  Paris → selectable, then SMHI's "outside the forecast area" message; missing key → message
+  pointing to Secrets.plist, coordinate mode still works; offline / rate limited → message;
+  a second place search cancels the first (same request-ID guard).
+- Test ideas: (decided in step 2).
+- Requirements: W-01, W-08, W-14, W-16
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real

@@ -1,63 +1,140 @@
 import Foundation
 import Observation
 
-/// State and actions for the search screen (W-01). Talks to the repository; never navigates.
+/// State and actions for the search screen (W-01, W-08). Talks to the repositories; never navigates.
 @Observable
 @MainActor
 final class SearchViewModel {
+    var inputMode: InputMode = .place
+
+    // Place mode
+    var placeQuery = ""
+    private(set) var placeSearch: PlaceSearchState = .idle
+
+    // Coordinates mode
     var latitudeText = ""
     var longitudeText = ""
+
+    /// The forecast part of the screen, shared by both modes.
     private(set) var state: LoadState = .idle
 
     private let repository: WeatherRepository
+    private let placeRepository: PlaceRepository
     private let grouper: ForecastGrouper
     private let now: () -> Date
 
-    /// The running request, so a new search can cancel it.
+    /// The running forecast request, so a new search can cancel it.
     private var currentTask: Task<Void, Never>?
-    /// Identifies the newest request. A result is only shown if it still belongs to this ID.
+    /// Identifies the newest forecast request. A result is only shown if it still belongs to this ID.
     private var latestRequestID = UUID()
     /// The place currently shown, so pull to refresh knows what to reload.
     private var lastCoordinate: Coordinate?
+    private var lastTitle = ""
 
-    init(repository: WeatherRepository, grouper: ForecastGrouper = ForecastGrouper(), now: @escaping () -> Date = { Date() }) {
+    /// Same race guard as for the forecast, but for place searches.
+    private var placeTask: Task<Void, Never>?
+    private var latestPlaceRequestID = UUID()
+
+    init(
+        repository: WeatherRepository,
+        placeRepository: PlaceRepository,
+        grouper: ForecastGrouper = ForecastGrouper(),
+        now: @escaping () -> Date = { Date() }
+    ) {
         self.repository = repository
+        self.placeRepository = placeRepository
         self.grouper = grouper
         self.now = now
     }
+
+    // MARK: - Place mode
+
+    /// Looks up the typed name. The current forecast stays visible until a place is chosen.
+    func searchPlaces() {
+        let query = placeQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        placeTask?.cancel()
+        latestPlaceRequestID = UUID()
+        guard !query.isEmpty else {
+            placeSearch = .failed(UserMessages.emptyPlaceQuery)
+            return
+        }
+
+        placeSearch = .searching
+        let requestID = latestPlaceRequestID
+        placeTask = Task {
+            let newState: PlaceSearchState
+            do throws(WeatherError) {
+                let places = try await placeRepository.search(query)
+                newState = places.isEmpty ? .noResults(UserMessages.noPlacesFound(for: query)) : .results(places)
+            } catch {
+                if error == .cancelled { return }
+                newState = .failed(UserMessages.message(for: error))
+            }
+            guard requestID == latestPlaceRequestID else { return }
+            placeSearch = newState
+        }
+    }
+
+    /// Loads the forecast for a place from the result list. A place outside SMHI's area
+    /// (e.g. Paris) is allowed here; SMHI's answer becomes the "outside the forecast area" message.
+    func select(_ place: Place) {
+        placeTask?.cancel()
+        latestPlaceRequestID = UUID()
+        placeSearch = .idle
+        placeQuery = place.name
+        state = .loading
+        load(place.coordinate, title: place.detail.isEmpty ? place.name : "\(place.name), \(place.detail)")
+    }
+
+    // MARK: - Coordinates mode
 
     /// Validates the text fields and loads a new place. The old place's data is cleared first.
     func search() {
         switch CoordinateInput.validate(latitude: latitudeText, longitude: longitudeText) {
         case .failure(let error):
             cancelPendingRequest()
+            // Forget the previous place, so "Try again" can't reload it by mistake.
+            lastCoordinate = nil
             state = .failed(UserMessages.message(for: error))
         case .success(let coordinate):
             state = .loading
-            load(coordinate)
+            load(coordinate, title: Self.title(for: coordinate))
         }
+    }
+
+    // MARK: - Shared
+
+    /// "Try again" after an error: reloads the place that failed, or re-checks the typed coordinates.
+    func retry() {
+        guard let lastCoordinate else {
+            search()
+            return
+        }
+        state = .loading
+        load(lastCoordinate, title: lastTitle)
     }
 
     /// Reloads the current place without clearing it, for pull to refresh. Returns when done,
     /// which is what SwiftUI's `.refreshable` waits for.
     func refresh() async {
         guard let lastCoordinate else { return }
-        await load(lastCoordinate).value
+        await load(lastCoordinate, title: lastTitle).value
     }
 
     @discardableResult
-    private func load(_ coordinate: Coordinate) -> Task<Void, Never> {
+    private func load(_ coordinate: Coordinate, title: String) -> Task<Void, Never> {
         cancelPendingRequest()
         let requestID = UUID()
         latestRequestID = requestID
         lastCoordinate = coordinate
+        lastTitle = title
 
         let task = Task {
             let newState: LoadState
             // `throws(WeatherError)` tells the compiler the catch only ever gets a WeatherError.
             do throws(WeatherError) {
                 let result = try await repository.forecast(for: coordinate)
-                newState = .loaded(makeDisplay(from: result))
+                newState = .loaded(makeDisplay(from: result, title: title))
             } catch {
                 // A newer search replaced this one; there is nothing to tell the user.
                 if error == .cancelled { return }
@@ -81,14 +158,21 @@ final class SearchViewModel {
         latestRequestID = UUID()
     }
 
-    private func makeDisplay(from result: ForecastResult) -> ForecastDisplay {
+    private func makeDisplay(from result: ForecastResult, title: String) -> ForecastDisplay {
         let currentTime = now()
         return ForecastDisplay(
+            title: title,
             grouped: grouper.group(result.forecast, now: currentTime),
             fetchedAt: result.fetchedAt,
             staleMessage: result.staleReason.map {
                 UserMessages.staleBanner(reason: $0, fetchedAt: result.fetchedAt, now: currentTime)
             }
         )
+    }
+
+    /// Always with a decimal point, so "59.33, 18.07" can't be misread as four numbers
+    /// the way "59,33, 18,07" could on a Swedish phone.
+    private static func title(for coordinate: Coordinate) -> String {
+        String(format: "%.2f, %.2f", coordinate.latitude, coordinate.longitude)
     }
 }
