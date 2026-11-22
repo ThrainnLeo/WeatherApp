@@ -32,4 +32,17 @@ struct WeatherErrorTests {
     @Test func serverErrorIsHTTP500() {
         #expect(WeatherError.fromHTTP(status: 500, body: Data()) == .http(500))
     }
+
+    // MARK: - E6, E7: place search key and limits
+
+    @Test func unauthorizedIsAPIKeyRejected() {
+        // What geocode.maps.co answers for a missing or wrong key.
+        let body = Data("Missing API Key".utf8)
+
+        #expect(WeatherError.fromHTTP(status: 401, body: body) == .apiKeyRejected)
+    }
+
+    @Test func tooManyRequestsIsRateLimited() {
+        #expect(WeatherError.fromHTTP(status: 429, body: Data()) == .rateLimited)
+    }
 }
