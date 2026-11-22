@@ -9,9 +9,14 @@ import SwiftUI
 
 @main
 struct WeatherAppApp: App {
+    // The real dependencies are created once here and passed down; tests build their own with fakes.
+    @State private var searchViewModel = SearchViewModel(
+        repository: WeatherRepository(apiClient: SMHIAPIClient(), cache: UserDefaultsCacheStore())
+    )
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            SearchView(viewModel: searchViewModel)
         }
     }
 }

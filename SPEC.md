@@ -228,6 +228,51 @@ Template — copy for each component before coding it:
   a daylight-saving day (25 Oct 2026, 25 hours) is grouped correctly.
 - Requirements: W-01, W-06, W-07, W-17
 
+> Specs below approved by the students on 2026-11-22 (session 4).
+
+### CoordinateInput (validation)
+- Owner (responsible for understanding it): _student_
+- Tier: Core (coordinate validation)
+- Purpose: turn the two text fields into a `Coordinate`, or explain what is wrong.
+- Inputs / outputs: `CoordinateInput.validate(latitude: String, longitude: String)
+  -> Result<Coordinate, CoordinateInputError>`; errors: `.notANumber(field)`, `.outOfRange(field)`.
+- Edge cases: decimal comma accepted (`59,33`, what a Swedish keyboard types); spaces trimmed;
+  empty text, `abc`, `nan`, `inf` rejected; latitude must be −90…90, longitude −180…180;
+  points outside SMHI's area are valid input (SMHI answers "outside forecast area").
+- Test ideas: `59.33`/`18.07` valid; `59,33` valid; `abc` → notANumber; empty → notANumber;
+  `nan` → notANumber; latitude `91` → outOfRange; longitude `-181` → outOfRange.
+- Requirements: W-01, W-14, W-17
+
+### SearchViewModel
+- Owner (responsible for understanding it): _student_
+- Tier: Core (ViewModel state machine incl. race-condition guard)
+- Purpose: owns the search screen's state and talks to the repository. Does not navigate.
+- Inputs / outputs: `latitudeText`, `longitudeText`, `search()`, `refresh()`;
+  `state: LoadState` = `.idle` · `.loading` · `.loaded(ForecastDisplay)` · `.failed(message)`;
+  `ForecastDisplay` = `GroupedForecast` + `fetchedAt` + optional stale banner text.
+  `@Observable` + `@MainActor`; repository, grouper and clock injected.
+- Edge cases: invalid input → message, no request; a new search clears the old place's data
+  (`.loading`, never another place's forecast under the new name); two quick searches → the
+  older request is cancelled and its result ignored even if it arrives last (request ID check);
+  `.cancelled` is never shown; cached data shows a banner ("Offline – showing data from 14:15").
+- Test ideas (real repository with `FakeAPIClient` + `FakeCacheStore`): success → `.loaded`; offline with cache → `.loaded` with banner;
+  offline without cache → `.failed` with the offline message; invalid input → no repository call;
+  slow first search finishing after a second search does not overwrite the second result.
+- Requirements: W-01, W-10, W-14, W-15, W-16, W-17
+
+### SearchView + WeatherCondition display (SwiftUI)
+- Owner (responsible for understanding it): _student_
+- Tier: Boilerplate
+- Purpose: the first screen: latitude/longitude fields + search button; idle hint, loading
+  spinner, error with retry, stale banner; "Now" header, "Today" hourly row, "Next 7 days"
+  scrollable list (W-13). `WeatherCondition` → SF Symbol + English text.
+- Inputs / outputs: reads `SearchViewModel.state`, calls `search()` / `refresh()`
+  (pull to refresh). App entry point builds the repository and ViewModel.
+- Edge cases: empty "Today" section late in the evening ("No more hours today");
+  layout works in portrait and landscape (W-11 checked later on iPad too).
+- Test ideas: none automated now (UX scenarios go to TEST_REPORT, W-18).
+- Requirements: W-01, W-06, W-10, W-13, W-16
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
@@ -340,22 +385,22 @@ Fill in as components are completed. Q26 is always asked first.
 | Q4 | HTTP 200 but JSON missing an expected field | Optional values become nil. A missing time gives .invalidJSON. A missing temperature or symbol skips the step.| |
 | Q5 | Full data flow: "search" pressed → forecast on screen | *Partial (no UI yet):* `WeatherRepository.forecast(for:)` → `SMHIAPIClient.fetchForecastData` → `ForecastParser.parse` → `CacheStore.save` → `ForecastResult` | `successReturnsFreshForecastAndSavesIt` |
 | Q6 | Caching: what is stored, when refreshed | `Persistence/UserDefaultsCacheStore.swift`: one `CachedForecast` (forecast + `fetchedAt`) per place, key rounded to 2 decimals; written after every successful fetch + parse in `WeatherRepository.fetchFresh` | W-09 · `successReturnsFreshForecastAndSavesIt`, `invalidJSONWithCacheReturnsCacheAndKeepsIt` |
-| Q7 | Where fetched data lives at runtime (declaration) | | |
-| Q8 | What happens to displayed data on a new search | | |
-| Q9 | How the UI learns new data arrived | | |
+| Q7 | Where fetched data lives at runtime (declaration) | data lives in SearchViewModel.state.| |
+| Q8 | What happens to displayed data on a new search | a new search sets .loading and clears the old place.| |
+| Q9 | How the UI learns new data arrived | @Observable.| |
 | Q10 | State preserved when leaving/returning to the app | | |
-| Q11 | Loading state; avoiding stale data during a request | | |
-| Q12 | Two rapid searches — race condition guard | | |
+| Q11 | Loading state; avoiding stale data during a request | the loading state.| |
+| Q12 | Two rapid searches — race condition guard | two quick searches. You search Stockholm (slow network), then Kiruna (fast). The request-ID guard. | |
 | Q13 | Request timeout — what is displayed | 15 s in `SMHIAPIClient.makeSession()` → `URLError.timedOut` → `WeatherError.timeout` → repository falls back to the cache (`staleReason == .timeout`) or throws. *Display: ViewModel, not built yet.* | W-16 · `timedOutIsTimeout` |
 | Q14 | Where network vs API errors (404/500) are distinguished | `Models/WeatherError.swift`: `init(_ error: URLError)` for network errors, `fromHTTP(status:body:)` for 404/500; both called in `SMHIAPIClient.fetchForecastData` | W-16 · `WeatherErrorTests` (E1–E5) |
 | Q15 | No internet, first launch | `WeatherRepository.forecast(for:)`: no cache → the `guard` rethrows `.offline`. *Message: ViewModel, not built yet.* | W-10, W-16 · `offlineWithoutCacheThrowsOffline` |
 | Q16 | No internet, after earlier successful load | `WeatherRepository.forecast(for:)` `catch`: returns the cached forecast with its old `fetchedAt` and `staleReason == .offline` | W-10 · `offlineWithCacheReturnsCachedForecast` |
 | Q17 | Where error state is declared and how it reaches the UI | Declared in `Models/WeatherError.swift`; reaches the ViewModel as `throws(WeatherError)` or `ForecastResult.staleReason`. *ViewModel/UI part not built yet.* | W-16 |
 | Q18 | Hardest error case | Candidate: "HTTP 200 but broken JSON while a cache exists": `WeatherRepository.fetchFresh` saves only after parsing succeeds, so the good cache survives | W-10 · `invalidJSONWithCacheReturnsCacheAndKeepsIt` |
-| Q19 | MVVM layers in the code | | |
+| Q19 | MVVM layers in the code | the MVVM layers.| |
 | Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel.| |
 | Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network. A pure function with no UI | |
-| Q22 | How navigation works; why the ViewModel doesn't navigate | | |
+| Q22 | How navigation works; why the ViewModel doesn't navigate | the ViewModel has no navigation code.| |
 | Q23 | One requirement ID → implementing code | | |
 | Q24 | Architecture changes for adding hourly forecast | the grouper already produces hourly data for today, so the architecture change would be in this file.| |
 | Q25 | A function the AI helped write — line by line | parse and makeStep are good candidates| |
