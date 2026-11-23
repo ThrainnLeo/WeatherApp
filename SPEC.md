@@ -350,7 +350,7 @@ Template — copy for each component before coding it:
 - Test ideas: (decided in step 2).
 - Requirements: W-01, W-08, W-14, W-16
 
-> Spec below is a DRAFT from 2026-11-23 (UI polish, branch `feature/ui-polish`) — students to approve or edit.
+> Spec below (UI polish, branch `feature/ui-polish`) approved by the students on 2026-11-23.
 
 ### WeatherTheme + hero block (UI polish)
 - Owner (responsible for understanding it): _student_
@@ -370,7 +370,7 @@ Template — copy for each component before coding it:
   is removed: symbols use `.multicolor`, which is readable now that the background is dark.
 - Requirements: W-01, W-06, H-02
 
-> Spec below is a DRAFT from 2026-11-23 (step 5, branch `feature/ui-polish`) — students to approve or edit.
+> Spec below (step 5, branch `feature/ui-polish`) approved by the students on 2026-11-23.
 
 ### StartView + designed states (UI polish)
 - Owner (responsible for understanding it): _student_
@@ -389,6 +389,36 @@ Template — copy for each component before coding it:
   quick-pick places (tried and removed on 2026-11-23, students' choice) and reopening on the last
   searched place (touches ViewModel + persistence, belongs with favourites, W-03).
 - Requirements: W-01, W-10, W-16, H-02
+
+> Specs below approved by the students on 2026-11-23 (session 7, branch `feature/final-screens`).
+
+### DayDetailView (detail screen)
+- Owner (responsible for understanding it): _student_
+- Tier: Boilerplate (view) — navigation in the View layer
+- Purpose: tapping a day in "Next 7 days" opens its full forecast (W-02): header with weekday and
+  date, symbol, condition, min/max, total precipitation, strongest wind; then one row per forecast
+  step with time span, symbol, temperature, wind speed + compass direction, gust, precipitation,
+  precipitation chance and humidity. Same weather background and frosted rows as the main screen.
+- Inputs / outputs: `DayDetailView(day: DailyForecast)`; opened with `NavigationLink(value:)` +
+  `.navigationDestination(for: DailyForecast.self)` in `SearchView`. No ViewModel: it only shows a
+  day that is already loaded and has no state or actions. `ForecastStep` and `DailyForecast` become
+  `Hashable` (needed by value-based navigation).
+- Edge cases: later days have 2–4 steps 6–12 h apart, so each row shows its span ("07:00–13:00")
+  instead of one time, so an amount is not read as one hour's rain; missing values (`nil`) are left
+  out, not shown as 0; today is not opened here (it is shown hour by hour on the main screen).
+- Test ideas: none automated for the view (UX scenarios go to TEST_REPORT, W-18).
+- Requirements: W-02, W-06, H-02
+
+### CompassDirection
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: turn SMHI's wind direction in degrees (the direction the wind comes from) into one of
+  8 compass points for the detail screen: N, NE, E, SE, S, SW, W, NW.
+- Inputs / outputs: `CompassDirection.abbreviation(forDegrees:) -> String`.
+- Edge cases: each point covers 45°, centred on it (N = 337.5°–22.5°), so 359° is N; values below 0
+  or 360 and above are wrapped first.
+- Test ideas: 0° → N; 90° → E; 225° → SW; 359° → N.
+- Requirements: W-02
 
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
