@@ -1,7 +1,8 @@
 import Foundation
 
 /// The forecast for one point in time.
-nonisolated struct ForecastStep: Codable, Equatable, Sendable {
+/// `Hashable` because `DailyForecast` (which contains steps) is used as a navigation value.
+nonisolated struct ForecastStep: Codable, Hashable, Sendable {
     /// The moment the values apply to.
     let time: Date
     /// Start of the period that `precipitation` covers. SMHI's steps are 1 hour apart at

@@ -15,6 +15,9 @@ struct SearchView: View {
                 content
             }
             .navigationTitle("Weather")
+            .navigationDestination(for: DailyForecast.self) { day in
+                DayDetailView(day: day)
+            }
             .refreshable { await viewModel.refresh() }
             // The gradient only shows through if the list's own grey background is hidden.
             .scrollContentBackground(.hidden)
@@ -210,7 +213,11 @@ struct SearchView: View {
 
         Section("Next 7 days") {
             ForEach(display.grouped.days) { day in
-                DailyRowView(day: day)
+                // The row only says *which* day was tapped; `navigationDestination` below decides
+                // what to show. Navigation stays in the View layer, the ViewModel never navigates.
+                NavigationLink(value: day) {
+                    DailyRowView(day: day)
+                }
             }
         }
         .frostedRows()

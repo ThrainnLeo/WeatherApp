@@ -417,7 +417,8 @@ Template — copy for each component before coding it:
 - Inputs / outputs: `CompassDirection.abbreviation(forDegrees:) -> String`.
 - Edge cases: each point covers 45°, centred on it (N = 337.5°–22.5°), so 359° is N; values below 0
   or 360 and above are wrapped first.
-- Test ideas: 0° → N; 90° → E; 225° → SW; 359° → N.
+- Test ideas: 0° → N; 90° → E; 225° → SW; 359° → N; boundary between two points:
+  22.4° → N and 22.5° → NE.
 - Requirements: W-02
 
 ## 5. Open questions
@@ -566,8 +567,8 @@ Fill in as components are completed. Q26 is always asked first.
 | Q19 | MVVM layers in the code | the MVVM layers. `SearchView` only reads `viewModel.state` and picks a `WeatherTheme`; no network or parsing in the views| |
 | Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel. `StartView`, `ForecastSkeletonView` and `WeatherTheme` are pure drawing; `SearchView` forwards taps to the ViewModel| |
 | Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network. A pure function with no UI | |
-| Q22 | How navigation works; why the ViewModel doesn't navigate | the ViewModel has no navigation code.| |
-| Q23 | One requirement ID → implementing code | | |
+| Q22 | How navigation works; why the ViewModel doesn't navigate | the ViewModel has no navigation code.| navigation lives in SearchView (navigationDestination). The ViewModel has no navigation code|
+| Q23 | One requirement ID → implementing code | a new screen came from the existing DailyForecast.steps, without any change to networking or parsing| |
 | Q24 | Architecture changes for adding hourly forecast | the grouper already produces hourly data for today, so the architecture change would be in this file.| |
 | Q25 | A function the AI helped write — line by line | parse and makeStep are good candidates| |
 | Q26 | AI meta-instructions + one requirement → code | §1 + | |
