@@ -10,8 +10,7 @@ struct DailyRowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Image(systemName: day.condition.symbolName)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(day.condition.symbolColor)
+                .symbolRenderingMode(.multicolor)
                 .font(.title3)
                 .frame(width: 32)
                 .accessibilityLabel(day.condition.text)
@@ -19,7 +18,7 @@ struct DailyRowView: View {
             if let precipitation = day.precipitation, precipitation >= 0.1 {
                 Text("\(precipitation.formatted(.number.precision(.fractionLength(1)))) mm")
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.cyan) // plain .blue is too dark on the dark weather background
                     .frame(width: 56, alignment: .trailing)
             } else {
                 Spacer().frame(width: 56)

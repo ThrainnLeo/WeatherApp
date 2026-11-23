@@ -350,6 +350,46 @@ Template — copy for each component before coding it:
 - Test ideas: (decided in step 2).
 - Requirements: W-01, W-08, W-14, W-16
 
+> Spec below is a DRAFT from 2026-11-23 (UI polish, branch `feature/ui-polish`) — students to approve or edit.
+
+### WeatherTheme + hero block (UI polish)
+- Owner (responsible for understanding it): _student_
+- Tier: Boilerplate
+- Purpose: make the forecast screen show the weather at a glance. `WeatherTheme` (sunny, cloudy,
+  rain, snow, storm) gives one background gradient per kind of weather; `WeatherCondition.theme`
+  maps SMHI's 27 conditions to it. `CurrentConditionsView` becomes a centred hero block (place name,
+  symbol, large temperature, condition, high/low, wind). Forecast rows sit on `.ultraThinMaterial`.
+- Inputs / outputs: `WeatherCondition.theme -> WeatherTheme`; `WeatherTheme.gradient -> LinearGradient`.
+  `SearchView` picks the theme from the current step (else the first day) and applies it only when
+  a forecast is loaded.
+- Edge cases: no theme (idle, loading, error) → normal system background and the user's light/dark
+  setting; with a theme the screen uses the dark colour scheme so text stays white on the gradient;
+  `.unknown` condition → cloudy theme; Dynamic Type: the large temperature uses `@ScaledMetric`;
+  the "High/Low" values only cover the hours left today (that is what `today` holds).
+- Test ideas: none automated (UX scenarios go to TEST_REPORT, W-18). `WeatherCondition.symbolColor`
+  is removed: symbols use `.multicolor`, which is readable now that the background is dark.
+- Requirements: W-01, W-06, H-02
+
+> Spec below is a DRAFT from 2026-11-23 (step 5, branch `feature/ui-polish`) — students to approve or edit.
+
+### StartView + designed states (UI polish)
+- Owner (responsible for understanding it): _student_
+- Tier: Boilerplate
+- Purpose: a designed first screen and designed loading/error states (H-02). When nothing is loaded
+  (`.idle`) the screen shows a night-sky gradient, a large animated symbol, a short friendly headline
+  and a hint that depends on the input mode. `.loading` shows a redacted skeleton of the forecast
+  instead of a spinner row; `.failed` shows a `ContentUnavailableView` with the message and
+  "Try again". Place search results ("Choose a place") are unchanged.
+- Inputs / outputs: `StartView(hint:)` only draws; no ViewModel, repository or test changes.
+- Edge cases: the idle gradient adds a new `WeatherTheme.night`, so the screen keeps the dark colour
+  scheme and nothing flashes grey → colour; loading and error use the night sky too, so a failed
+  search never shows the previous place's weather colours; `symbolEffect` is off when Reduce Motion
+  is on; skeleton rows are hidden from VoiceOver and the loading state announces "Loading forecast".
+- Test ideas: none automated (UX scenarios go to TEST_REPORT, W-18). Not done here: one-tap
+  quick-pick places (tried and removed on 2026-11-23, students' choice) and reopening on the last
+  searched place (touches ViewModel + persistence, belongs with favourites, W-03).
+- Requirements: W-01, W-10, W-16, H-02
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
@@ -451,6 +491,25 @@ Template — copy for each component before coding it:
     when called from the main actor (approachable concurrency setting); only `@concurrent` moves
     parsing off the main thread (W-15).
 
+- **2026-11-23 — App always uses the dark colour scheme**
+  - `.preferredColorScheme(.dark)` in `SearchView`; gradients are fixed colours, not light/dark pairs.
+  - Alternatives: light and dark gradient pairs; dark only while a forecast is shown
+  - Why: white text on every gradient with no hard-coded text colours, and no grey → colour flash
+    between start screen and forecast. Cost: the user's light/dark setting is ignored.
+    One line to change if we want it back.
+
+- **2026-11-23 — Symbols: `.multicolor`, not `.palette` or per-condition colours**
+  - Alternatives: `.hierarchical` + `symbolColor` table (before), `.palette`
+  - Why: on the dark background the white clouds of `.multicolor` are readable, and layer order in
+    `.palette` differs per symbol, which we could not check. The `symbolColor` table was removed.
+
+- **2026-11-23 — Start, loading and error screens use a night-sky theme**
+  - Why: a failed search must not show the previous place's weather colours.
+
+- **2026-11-23 — No quick-pick cities on the start screen**
+  - Tried five (Stockholm, Oslo, Helsinki, Copenhagen, Kiruna) and removed them on our decision.
+  - Note: Reykjavik is outside SMHI's forecast area (404), so Iceland can't be offered.
+
 ## 7. Oral exam map
 Fill in as components are completed. Q26 is always asked first.
 
@@ -474,15 +533,15 @@ Fill in as components are completed. Q26 is always asked first.
 | Q16 | No internet, after earlier successful load | `WeatherRepository.forecast(for:)` `catch`: returns the cached forecast with its old `fetchedAt` and `staleReason == .offline` | W-10 · `offlineWithCacheReturnsCachedForecast` |
 | Q17 | Where error state is declared and how it reaches the UI | Declared in `Models/WeatherError.swift`; reaches the ViewModel as `throws(WeatherError)` or `ForecastResult.staleReason`. *ViewModel/UI part not built yet.* | W-16 |
 | Q18 | Hardest error case | Candidate: "HTTP 200 but broken JSON while a cache exists": `WeatherRepository.fetchFresh` saves only after parsing succeeds, so the good cache survives | W-10 · `invalidJSONWithCacheReturnsCacheAndKeepsIt` |
-| Q19 | MVVM layers in the code | the MVVM layers.| |
-| Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel.| |
+| Q19 | MVVM layers in the code | the MVVM layers. `SearchView` only reads `viewModel.state` and picks a `WeatherTheme`; no network or parsing in the views| |
+| Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel. `StartView`, `ForecastSkeletonView` and `WeatherTheme` are pure drawing; `SearchView` forwards taps to the ViewModel| |
 | Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network. A pure function with no UI | |
 | Q22 | How navigation works; why the ViewModel doesn't navigate | the ViewModel has no navigation code.| |
 | Q23 | One requirement ID → implementing code | | |
 | Q24 | Architecture changes for adding hourly forecast | the grouper already produces hourly data for today, so the architecture change would be in this file.| |
 | Q25 | A function the AI helped write — line by line | parse and makeStep are good candidates| |
 | Q26 | AI meta-instructions + one requirement → code | §1 + | |
-| Q27 | Where we pushed back on the AI, and why | | |
+| Q27 | Where we pushed back on the AI, and why | Example: removed the quick-pick buttons; the AI first suggested Reykjavik, which SMHI does not cover | |
 | Q28 | How AI code was verified — show a test | | |
 | Q29 | Most effective prompt, and why | | |
 | Q30 | What we'd do differently with the same tools | | |
@@ -495,6 +554,7 @@ Fill in as components are completed. Q26 is always asked first.
 | 3 | API client, error classification, cache, repository + tests (W-05, W-09, W-10, W-15, W-16, W-17) | Thrainn | ◐ code + tests done; teach-back and PR review pending |
 | 4 | Grouping: hourly today / daily rest, in the user's time zone (W-07, W-17 data transformation) | | ☐ |
 | 5 | ViewModel state machine incl. race-condition guard; first search screen (W-01, W-10, W-15, W-16) | | ☐ |
+| 6 | UI polish: hero block, weather-driven background, start screen, loading and error states (W-01, W-06, H-02) | Hugo | ◐ steps 1, 2, 3, 5 done; 4, 6, 7 left; teach-back and PR review pending |
 
 ## 9. End-of-session ritual + update log
 After every session:
@@ -514,6 +574,7 @@ After every session:
 | 2026-11-19 | Thrainn | Set up Xcode project, GitHub repo and context files; decided APIs, architecture, cache and AI workflow. | — |
 | 2026-11-20 | Thrainn | Session 2: SMHI DTO, domain models and ForecastParser (9999 → nil, skipped steps, sorting); 7 parser tests with a real Stockholm fixture. | W-05, W-12, W-17 |
 | 2026-11-20 | Thrainn | Session 3: API client, WeatherError classification, UserDefaults cache and WeatherRepository with cache fallback (`@concurrent`); 11 tests with fakes. | W-05, W-09, W-10, W-15, W-16, W-17 |
+| 2026-11-23 | Hugo | Session 6: UI polish on `feature/ui-polish`: hero block, gradient background per weather (`WeatherTheme`), frosted rows, multicolor symbols, start screen with night sky, redacted loading skeleton and `ContentUnavailableView` for errors. No ViewModel or test changes. | W-01, W-06, H-02 |
 
 ## 10. AI usage summary
 Which parts were AI-assisted, which tools and prompts were used (details in `docs/LLM_PROCESS.md`).

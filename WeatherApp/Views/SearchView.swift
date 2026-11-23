@@ -16,7 +16,36 @@ struct SearchView: View {
             }
             .navigationTitle("Weather")
             .refreshable { await viewModel.refresh() }
+            // The gradient only shows through if the list's own grey background is hidden.
+            .scrollContentBackground(.hidden)
+            .background {
+                // `.id` + `.transition` make a theme change a cross-fade instead of a hard cut.
+                theme.gradient
+                    .ignoresSafeArea()
+                    .id(theme)
+                    .transition(.opacity)
+            }
+            .animation(.smooth, value: theme)
         }
+        // Every gradient is dark, so the whole app uses the dark colour scheme: then `.primary` /
+        // `.secondary` text and the materials are light-on-dark without hard-coded colours.
+        // Change this one line to hand the choice back to the user's own light/dark setting.
+        .preferredColorScheme(.dark)
+    }
+
+    /// The background for what is on screen: the forecast's weather, or the night sky when
+    /// there is no forecast (start, loading, error).
+    private var theme: WeatherTheme {
+        guard case .loaded(let display) = viewModel.state else { return .night }
+        let condition = display.grouped.current?.condition ?? display.grouped.days.first?.condition
+        return condition?.theme ?? .night
+    }
+
+    /// High and low over the hours left today (what `today` holds), or `nil` when none are left.
+    private func temperatureRange(of grouped: GroupedForecast) -> (high: Double, low: Double)? {
+        let temperatures = grouped.today.map(\.temperature)
+        guard let high = temperatures.max(), let low = temperatures.min() else { return nil }
+        return (high, low)
     }
 
     // MARK: - Input
@@ -53,6 +82,7 @@ struct SearchView: View {
                     .disabled(viewModel.state == .loading)
             }
         }
+        .frostedRows()
     }
 
     @ViewBuilder
@@ -68,6 +98,7 @@ struct SearchView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .frostedRows()
         case .results(let places):
             Section("Choose a place") {
                 ForEach(places) { place in
@@ -79,16 +110,19 @@ struct SearchView: View {
                     .tint(.primary)
                 }
             }
+            .frostedRows()
         case .noResults(let message):
             Section {
                 Text(message)
                     .foregroundStyle(.secondary)
             }
+            .frostedRows()
         case .failed(let message):
             Section {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             }
+            .frostedRows()
         }
     }
 
@@ -98,26 +132,32 @@ struct SearchView: View {
     private var content: some View {
         switch viewModel.state {
         case .idle:
+            // Sits directly on the gradient, like the forecast's hero block: no card, no separator.
             Section {
-                Text(viewModel.inputMode == .place
-                     ? "Search for a place to see its forecast."
-                     : "Enter coordinates to see the forecast. Stockholm is 59.33, 18.07.")
-                    .foregroundStyle(.secondary)
+                StartView(
+                    hint: viewModel.inputMode == .place
+                        ? "Search for a place above to see its forecast."
+                        : "Enter coordinates above to see the forecast. Stockholm is 59.33, 18.07."
+                )
             }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         case .loading:
-            Section {
-                HStack(spacing: 12) {
-                    ProgressView()
-                    Text("Loading forecast…")
-                        .foregroundStyle(.secondary)
-                }
-            }
+            ForecastSkeletonView()
         case .failed(let message):
             Section {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                Button("Try again") { viewModel.retry() }
+                ContentUnavailableView {
+                    Label("Couldn't show the forecast", systemImage: "exclamationmark.triangle.fill")
+                } description: {
+                    Text(message)
+                } actions: {
+                    Button("Try again") { viewModel.retry() }
+                        .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity)
             }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         case .loaded(let display):
             forecastSections(display)
         }
@@ -130,21 +170,26 @@ struct SearchView: View {
                 Label(staleMessage, systemImage: "wifi.slash")
                     .foregroundStyle(.orange)
             }
+            .frostedRows()
         }
 
+        // The hero sits directly on the gradient: no card, no separator.
         Section {
             if let current = display.grouped.current {
-                CurrentConditionsView(step: current)
+                let range = temperatureRange(of: display.grouped)
+                CurrentConditionsView(title: display.title, step: current, high: range?.high, low: range?.low)
             } else {
-                Text("No current data. Pull down to refresh.")
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 4) {
+                    Text(display.title)
+                        .font(.headline)
+                    Text("No current data. Pull down to refresh.")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
             }
-        } header: {
-            Text(display.title)
-                .font(.headline)
-                .textCase(nil)
-                .foregroundStyle(.primary)
         }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
 
         Section("Today") {
             if display.grouped.today.isEmpty {
@@ -161,11 +206,13 @@ struct SearchView: View {
                 }
             }
         }
+        .frostedRows()
 
         Section("Next 7 days") {
             ForEach(display.grouped.days) { day in
                 DailyRowView(day: day)
             }
         }
+        .frostedRows()
     }
 }

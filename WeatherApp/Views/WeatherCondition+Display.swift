@@ -1,20 +1,19 @@
 import SwiftUI
 
-/// How each SMHI condition is shown: an SF Symbol, a colour and a short English text (W-06).
+/// How each SMHI condition is shown: an SF Symbol, a background theme and a short English text (W-06).
 extension WeatherCondition {
-    /// Used with `.hierarchical` rendering. `.multicolor` draws clouds white, which disappears
-    /// on a white list background.
-    var symbolColor: Color {
+    /// Which background gradient fits this condition. Sleet goes with rain, fog and unknown with cloudy.
+    var theme: WeatherTheme {
         switch self {
-        case .clearSky, .nearlyClearSky, .variableCloudiness, .halfclearSky: .orange
-        case .cloudySky, .overcast, .fog, .unknown: .gray
+        case .clearSky, .nearlyClearSky, .variableCloudiness, .halfclearSky: .sunny
+        case .cloudySky, .overcast, .fog, .unknown: .cloudy
         case .lightRainShowers, .moderateRainShowers, .heavyRainShowers,
              .lightRain, .moderateRain, .heavyRain,
              .lightSleetShowers, .moderateSleetShowers, .heavySleetShowers,
-             .lightSleet, .moderateSleet, .heavySleet: .blue
+             .lightSleet, .moderateSleet, .heavySleet: .rain
         case .lightSnowShowers, .moderateSnowShowers, .heavySnowShowers,
-             .lightSnowfall, .moderateSnowfall, .heavySnowfall: .cyan
-        case .thunderstorm, .thunder: .purple
+             .lightSnowfall, .moderateSnowfall, .heavySnowfall: .snow
+        case .thunderstorm, .thunder: .storm
         }
     }
 
