@@ -18,6 +18,10 @@ final class SearchViewModel {
     /// The forecast part of the screen, shared by both modes.
     private(set) var state: LoadState = .idle
 
+    /// The place whose forecast is loading or shown, so the star button knows what to save (W-03).
+    /// For a coordinate search it is a `Place` named after its coordinates.
+    private(set) var currentPlace: Place?
+
     private let repository: WeatherRepository
     private let placeRepository: PlaceRepository
     private let grouper: ForecastGrouper
@@ -82,8 +86,14 @@ final class SearchViewModel {
         latestPlaceRequestID = UUID()
         placeSearch = .idle
         placeQuery = place.name
+        currentPlace = place
         state = .loading
         load(place.coordinate, title: place.detail.isEmpty ? place.name : "\(place.name), \(place.detail)")
+    }
+
+    /// Opens a favourite: the same path as choosing a place from the search results.
+    func open(_ favorite: Place) {
+        select(favorite)
     }
 
     // MARK: - Coordinates mode
@@ -95,10 +105,14 @@ final class SearchViewModel {
             cancelPendingRequest()
             // Forget the previous place, so "Try again" can't reload it by mistake.
             lastCoordinate = nil
+            currentPlace = nil
             state = .failed(UserMessages.message(for: error))
         case .success(let coordinate):
+            let title = Self.title(for: coordinate)
+            // Decision 3: coordinate searches can be favourites, named after their coordinates.
+            currentPlace = Place(name: title, detail: "", coordinate: coordinate)
             state = .loading
-            load(coordinate, title: Self.title(for: coordinate))
+            load(coordinate, title: title)
         }
     }
 

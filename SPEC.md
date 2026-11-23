@@ -421,6 +421,48 @@ Template — copy for each component before coding it:
   22.4° → N and 22.5° → NE.
 - Requirements: W-02
 
+> Specs below approved by the students on 2026-11-23 (W-03, branch `feature/W-03-favourites`).
+
+### FavoritesStore (protocol) + UserDefaultsFavoritesStore
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: keep the user's favourite places between app launches (W-03).
+- Inputs / outputs: `load() -> [Place]`, `save(_ places: [Place])`. Stored as one JSON array
+  (`Codable`) in an injected `UserDefaults`, in the order the user added them.
+- Edge cases: nothing saved yet or corrupt / old-format data → empty list, never a crash;
+  a failed save is ignored (the list stays correct in memory for this session).
+- Test ideas (throwaway `UserDefaults(suiteName:)`): save then load gives the same places in the
+  same order; corrupt data → empty list.
+- Requirements: W-03
+
+### FavoritesViewModel
+- Owner (responsible for understanding it): _student_
+- Tier: Core (state)
+- Purpose: the favourites list and its actions, separate from `SearchViewModel` (decision 1).
+- Inputs / outputs: `favorites: [Place]`, `isFavorite(_:)`, `toggle(_:)`, `remove(at:)`,
+  `lastKnownTemperature(for:)`; `@Observable` + `@MainActor`; store and `WeatherRepository` injected
+  (the temperature is read through the repository's new `cachedForecast(for:)`, never straight from
+  the cache, so the layer rule holds). Every change is saved straight away.
+- Edge cases: "same place" = coordinates equal when rounded to 2 decimals (~1 km), the same rule as
+  the forecast cache, so adding a place twice keeps one entry (decision 4); coordinate searches can
+  be favourites, named "59.33, 18.07" (decision 3).
+- Test ideas (fake store): `toggle` adds, a second `toggle` removes; adding the same place twice
+  gives one entry; `isFavorite` is true for a place ~500 m from a saved one; `remove(at:)` removes
+  the right place and the store is saved.
+- Requirements: W-03, W-17
+
+### SearchViewModel (current place) + FavoritesView + star button
+- Tier: Core (`currentPlace`) / Boilerplate (views)
+- Purpose: `SearchViewModel.currentPlace` is the place whose forecast is shown (from a place search,
+  or a `Place` named by its coordinates). A star next to the place name toggles it. A toolbar button
+  opens `FavoritesView` as a sheet (decision 2): name, region and the last known temperature from the
+  forecast cache, if any (decision 5); tap → sheet closes and the forecast loads; swipe to delete.
+- Edge cases: no star unless a forecast is shown (so Paris can't be added); empty list →
+  "No favourites yet. Tap ★ on a forecast to add one."; opening a favourite offline shows cached data
+  with the banner; reopening the last place at launch is not part of this (decision 6).
+- Test ideas: none automated for the views (UX scenarios go to TEST_REPORT, W-18).
+- Requirements: W-03, W-09, W-10
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
@@ -555,7 +597,7 @@ Fill in as components are completed. Q26 is always asked first.
 | Q7 | Where fetched data lives at runtime (declaration) | data lives in SearchViewModel.state.| |
 | Q8 | What happens to displayed data on a new search | a new search sets .loading and clears the old place.| |
 | Q9 | How the UI learns new data arrived | @Observable.| |
-| Q10 | State preserved when leaving/returning to the app | | |
+| Q10 | State preserved when leaving/returning to the app | state kept when leaving and returning to the app): favourites are in UserDefaults and survive a restart| |
 | Q11 | Loading state; avoiding stale data during a request | the loading state.| |
 | Q12 | Two rapid searches — race condition guard | two quick searches. You search Stockholm (slow network), then Kiruna (fast). The request-ID guard. | |
 | Q13 | Request timeout — what is displayed | 15 s in `SMHIAPIClient.makeSession()` → `URLError.timedOut` → `WeatherError.timeout` → repository falls back to the cache (`staleReason == .timeout`) or throws. *Display: ViewModel, not built yet.* | W-16 · `timedOutIsTimeout` |
@@ -564,8 +606,8 @@ Fill in as components are completed. Q26 is always asked first.
 | Q16 | No internet, after earlier successful load | `WeatherRepository.forecast(for:)` `catch`: returns the cached forecast with its old `fetchedAt` and `staleReason == .offline` | W-10 · `offlineWithCacheReturnsCachedForecast` |
 | Q17 | Where error state is declared and how it reaches the UI | Declared in `Models/WeatherError.swift`; reaches the ViewModel as `throws(WeatherError)` or `ForecastResult.staleReason`. *ViewModel/UI part not built yet.* | W-16 |
 | Q18 | Hardest error case | Candidate: "HTTP 200 but broken JSON while a cache exists": `WeatherRepository.fetchFresh` saves only after parsing succeeds, so the good cache survives | W-10 · `invalidJSONWithCacheReturnsCacheAndKeepsIt` |
-| Q19 | MVVM layers in the code | the MVVM layers. `SearchView` only reads `viewModel.state` and picks a `WeatherTheme`; no network or parsing in the views| |
-| Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel. `StartView`, `ForecastSkeletonView` and `WeatherTheme` are pure drawing; `SearchView` forwards taps to the ViewModel| |
+| Q19 | MVVM layers in the code | the MVVM layers. `SearchView` only reads `viewModel.state` and picks a `WeatherTheme`; no network or parsing in the views| FavoritesView only displays; the logic is in the ViewModel and the store.|
+| Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel. `StartView`, `ForecastSkeletonView` and `WeatherTheme` are pure drawing; `SearchView` forwards taps to the ViewModel| FavoritesView only displays; the logic is in the ViewModel and the store.|
 | Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network. A pure function with no UI | |
 | Q22 | How navigation works; why the ViewModel doesn't navigate | the ViewModel has no navigation code.| navigation lives in SearchView (navigationDestination). The ViewModel has no navigation code|
 | Q23 | One requirement ID → implementing code | a new screen came from the existing DailyForecast.steps, without any change to networking or parsing| |

@@ -35,6 +35,12 @@ nonisolated struct WeatherRepository: Sendable {
         }
     }
 
+    /// The saved forecast for a place, without any network request. Used by the favourites list
+    /// to show a last known temperature, also offline.
+    func cachedForecast(for coordinate: Coordinate) -> CachedForecast? {
+        cache.load(for: coordinate)
+    }
+
     private func fetchFresh(for coordinate: Coordinate) async throws(WeatherError) -> ForecastResult {
         let data = try await apiClient.fetchForecastData(for: coordinate)
 

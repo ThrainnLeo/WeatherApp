@@ -4,6 +4,10 @@ import SwiftUI
 /// Only reads the ViewModel and forwards taps; no networking or parsing here.
 struct SearchView: View {
     @Bindable var viewModel: SearchViewModel
+    let favoritesViewModel: FavoritesViewModel
+
+    /// Whether the favourites sheet is open. Pure screen state, so it lives in the View.
+    @State private var showingFavorites = false
 
     var body: some View {
         NavigationStack {
@@ -17,6 +21,21 @@ struct SearchView: View {
             .navigationTitle("Weather")
             .navigationDestination(for: DailyForecast.self) { day in
                 DayDetailView(day: day)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingFavorites = true
+                    } label: {
+                        Image(systemName: "list.star")
+                    }
+                    .accessibilityLabel("Favourites")
+                }
+            }
+            .sheet(isPresented: $showingFavorites) {
+                FavoritesView(viewModel: favoritesViewModel) { place in
+                    viewModel.open(place)
+                }
             }
             .refreshable { await viewModel.refresh() }
             // The gradient only shows through if the list's own grey background is hidden.
@@ -180,7 +199,18 @@ struct SearchView: View {
         Section {
             if let current = display.grouped.current {
                 let range = temperatureRange(of: display.grouped)
-                CurrentConditionsView(title: display.title, step: current, high: range?.high, low: range?.low)
+                CurrentConditionsView(
+                    title: display.title,
+                    step: current,
+                    high: range?.high,
+                    low: range?.low,
+                    isFavorite: viewModel.currentPlace.map(favoritesViewModel.isFavorite) ?? false,
+                    // Only shown when a forecast is loaded, so a place SMHI can't cover (Paris)
+                    // never gets a star.
+                    onToggleFavorite: viewModel.currentPlace.map { place in
+                        { favoritesViewModel.toggle(place) }
+                    }
+                )
             } else {
                 VStack(spacing: 4) {
                     Text(display.title)
