@@ -5,6 +5,7 @@ import SwiftUI
 struct SearchView: View {
     @Bindable var viewModel: SearchViewModel
     let favoritesViewModel: FavoritesViewModel
+    let settingsViewModel: SettingsViewModel
 
     /// The two sheets this screen can open. One `.sheet(item:)` for both: two separate sheet modifiers
     /// on the same view can interfere with each other.
@@ -73,7 +74,7 @@ struct SearchView: View {
                         viewModel.open(place)
                     }
                 case .settings:
-                    SettingsView(sky: sky)
+                    SettingsView(viewModel: settingsViewModel, sky: sky)
                 }
             }
             .refreshable { await viewModel.refresh() }

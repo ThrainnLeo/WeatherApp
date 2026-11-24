@@ -23,9 +23,15 @@ struct WeatherAppApp: App {
         repository: WeatherAppApp.repository
     )
 
+    @State private var settingsViewModel = SettingsViewModel(repository: WeatherAppApp.repository)
+
     var body: some Scene {
         WindowGroup {
-            SearchView(viewModel: searchViewModel, favoritesViewModel: favoritesViewModel)
+            SearchView(
+                viewModel: searchViewModel,
+                favoritesViewModel: favoritesViewModel,
+                settingsViewModel: settingsViewModel
+            )
         }
     }
 }

@@ -57,6 +57,12 @@ nonisolated struct WeatherRepository: Sendable {
         return age >= 0 && age < maxAge
     }
 
+    /// Forgets every saved forecast ("Clear saved forecasts" in the settings). Favourites and settings are
+    /// kept: they live under other keys.
+    func clearSavedForecasts() {
+        cache.removeAll()
+    }
+
     /// The saved forecast for a place, without any network request. Used by the favourites list
     /// to show a last known temperature, also offline.
     func cachedForecast(for coordinate: Coordinate) -> CachedForecast? {

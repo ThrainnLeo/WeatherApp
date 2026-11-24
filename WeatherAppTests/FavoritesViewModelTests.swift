@@ -67,6 +67,33 @@ struct FavoritesViewModelTests {
         #expect(store.saveCount == 1)
     }
 
+    // MARK: - F7: clearing the saved forecasts (W-04)
+
+    @Test func clearingSavedForecastsRemovesTheTemperatureButKeepsTheFavourites() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let step = ForecastStep(
+            time: now, intervalStart: now, temperature: 7, condition: .clearSky,
+            windSpeed: nil, windGust: nil, windDirection: nil,
+            precipitation: nil, precipitationProbability: nil, humidity: nil
+        )
+        let saved = CachedForecast(
+            forecast: Forecast(latitude: 59.33, longitude: 18.07, issuedAt: now, steps: [step]),
+            fetchedAt: now
+        )
+        let repository = WeatherRepository(
+            apiClient: FakeAPIClient(.failure(.offline)),
+            cache: FakeCacheStore(prefilled: [stockholm.coordinate: saved])
+        )
+        let viewModel = FavoritesViewModel(store: FakeFavoritesStore([stockholm]), repository: repository)
+        #expect(viewModel.lastKnownTemperature(for: stockholm, now: now) == 7)
+
+        repository.clearSavedForecasts()
+
+        // The row then shows no temperature (the view hides a `nil`), and the favourite itself stays.
+        #expect(viewModel.lastKnownTemperature(for: stockholm, now: now) == nil)
+        #expect(viewModel.favorites == [stockholm])
+    }
+
     // MARK: - Helpers
 
     private func makeViewModel(store: FakeFavoritesStore) -> FavoritesViewModel {

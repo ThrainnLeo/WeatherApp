@@ -669,8 +669,10 @@ Template — copy for each component before coding it:
   - `CacheStore.removeAll()` (new protocol method) and `UserDefaultsCacheStore.removeAll()`: removes
     only the keys that start with `forecast.`, so favourites and settings are kept.
     `WeatherRepository.clearSavedForecasts()` forwards it.
-  - `SettingsViewModel` (new, `@Observable` + `@MainActor`, repository injected): `clearSavedForecasts()`
-    and `didClear` (for the confirmation text). The View never touches the repository.
+  - `SettingsViewModel` (new, `@Observable` + `@MainActor`, repository injected): `clearSavedForecasts()`.
+    The "cleared" text is `@State` in the view (changed when built, 2026-11-24): a flag in the ViewModel
+    would live as long as the app and show the text the next time the sheet opens. The View never
+    touches the repository.
   - `SettingsView(sky:)`: a sheet like `FavoritesView` (`NavigationStack`, `Form`, "Done", the sky
     gradient, its own colour scheme from `sky`). The refresh picker and the animation switch use
     `@AppStorage` (decision log: "Settings stored with `@AppStorage`"), with `RefreshPolicy.key` shared
