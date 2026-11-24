@@ -531,6 +531,90 @@ Template — copy for each component before coding it:
   day; the colour scheme follows the theme (replaces 'app always dark')".
 - Requirements: H-02, W-06
 
+> Spec below approved by Hugo on 2026-11-24 (branch `feature/hugo-final`); Thrainn to review.
+> Choices: `.storm` = denser rain, no lightning; the still frame under Reduce Motion is judged in the
+> simulator; step 6's small items are a separate step after the background.
+
+### Animated weather background (UI polish step 6)
+- Owner (responsible for understanding it): Hugo
+- Tier: Boilerplate (drawing) · Support (layer data, motion maths, pause rules)
+- Purpose: show the weather behind the text, not only as a gradient: drifting clouds (cloudy), falling
+  rain (rain), falling snow (snow), a faint sun glow (sunny), stars (night). SwiftUI only
+  (`TimelineView`, `Canvas`, SF Symbols), no packages (H-02, W-06).
+- Design rules (from Emil's and Apple's motion rules): it is ambient, so slow, low contrast and never
+  on the text; constant motion is linear; nothing pops in (elements enter from outside the screen,
+  stars never go to 0 opacity); no blur (expensive); no flashes, so no lightning for `.storm`.
+- How it connects to `WeatherTheme` (data in the theme, drawing in the view):
+  - `WeatherLayer` (new enum, plain data, `Equatable, Sendable`): `.sunGlow`, `.clouds(count:)`,
+    `.rain(count:)`, `.snow(count:)`, `.stars(count:)`. Each has a `minimumInterval` (seconds between
+    frames). A layer carries no colours or sizes; the view decides how it looks.
+  - `WeatherTheme.layers: [WeatherLayer]` and `WeatherTheme.frameInterval: Double` (the smallest
+    `minimumInterval` of its layers). `gradient` and `colorScheme` stay as they are.
+  - Proposed mapping (counts are starting values, tuned on a device):
+
+    | Theme | Layers | Frame interval |
+    |---|---|---|
+    | `.day` (light) | sun glow, 2 white clouds | 1/20 s |
+    | `.night` | 55 stars (slow twinkle) | 1/10 s |
+    | `.sunny` | sun glow, 1 cloud | 1/20 s |
+    | `.cloudy` | 4 clouds | 1/20 s |
+    | `.rain` | 2 clouds, 40 rain streaks | 1/30 s |
+    | `.snow` | 2 clouds, 36 snowflakes | 1/30 s |
+    | `.storm` | 3 clouds, 70 rain streaks (no lightning) | 1/30 s |
+
+  - `.day` is the only light theme, so its clouds are white with some opacity on the pale blue
+    gradient and its glow is warm; the dark themes use white at low opacity. The layer colours are
+    chosen in the view from `theme.colorScheme`, not stored in the theme.
+- Inputs / outputs:
+  - `WeatherBackground(theme: WeatherTheme, isAnimated: Bool = true)` (new view, replaces
+    `theme.gradient.ignoresSafeArea()...`): the gradient plus one `TimelineView(.animation(minimumInterval:
+    theme.frameInterval, paused:))` that draws one `Canvas`. Clouds are the SF Symbol `cloud.fill`,
+    passed to `Canvas` as a symbol so it is resolved once, not every frame.
+  - Every element is a pure function of time, a seed and the canvas size (for example
+    `y = (startY + speed · t) mod (height + margin)`); there is no per-frame state. A seeded generator
+    gives each element its fixed start position, speed and phase, so rotation, iPad resizing and
+    returning from the background need no special code. Wrapping lives in a pure helper.
+  - Also new: `WeatherParticle` (the fixed start values of one element, made from a seed, with a pool
+    per layer kind from which a layer takes its first `count`), `WeatherMotion` (wrapping and
+    position, pure), `SeededGenerator` (a small repeatable random generator), and
+    `WeatherLayerRenderer` (the `Canvas` drawing, `nonisolated`, so the `Canvas` closure has no actor
+    isolation to cross). All in `Views/`, next to `WeatherTheme`.
+  - `SearchView` uses `WeatherBackground(theme: theme)`; the existing `.id(theme)` +
+    `.transition(.opacity)` + `.animation(.smooth, value: theme)` cross-fades gradient and layers
+    together. `DayDetailView` and `FavoritesView` use `isAnimated: false` (gradient only), so only one
+    animated background exists and the secondary screens stay calm.
+- Reduce Motion and battery (the background pauses, and a paused `TimelineView` draws one still frame):
+  - Reduce Motion on (`accessibilityReduceMotion`) → paused: a still frame of the same layers; the
+    theme cross-fade stays (it is opacity only).
+  - Low Power Mode on → paused, the same still frame. Read with `ProcessInfo.isLowPowerModeEnabled`
+    and updated from `NSProcessInfoPowerStateDidChange` (a `.task` over `NotificationCenter.notifications`).
+  - App not `.active` (`scenePhase`) → paused.
+  - Frame rate is capped per theme (table above): a slow cloud needs 20 fps, not 60; stars 10 fps.
+  - Budget: at most 80 moving elements per theme; one `Canvas` pass; no blur, no per-frame view updates.
+  - A screen that covers the main one (day detail, sheet) should stop its timeline; to be confirmed
+    with the CPU gauge. Acceptance: Xcode's Energy Impact stays "Low" on a real device after a few
+    minutes on each theme. The Simulator is not representative for this.
+- Edge cases: the text stays readable (cloud opacity ≤ about 0.15 on dark themes, rain streak ≤ 0.3,
+  checked by eye, also with Increase Contrast; the hero block sits directly on the background, so it
+  is the place to check); rows are frosted material, which also softens what moves behind them;
+  `allowsHitTesting(false)` and `accessibilityHidden(true)` on the background; a theme change mid-flight
+  starts the new layers at whatever phase the shared clock gives; Reduce Motion or Low Power Mode
+  switched on while the screen is open pauses immediately; large `Date` values are fine in `Double`.
+- Test ideas (approved by Hugo 2026-11-24, in `WeatherLayerTests` and `WeatherMotionTests`): `WeatherTheme.layers` mapping
+  (rain has rain, night has stars, cloudy has clouds, day and sunny have the sun glow, storm has no
+  flash layer); budget (every theme ≤ 80 elements, no `frameInterval` below 1/30 s, i.e. never more
+  than 30 fps); the wrapping helper (an element that has fallen one full cycle is back at the top and
+  never ends up outside the margin); the seeded generator gives the same positions for the same seed.
+  The views have no automated tests (UX scenarios go to TEST_REPORT, W-18).
+- Maybe later: a "Animated background" switch on the settings screen (W-04).
+- Requirements: H-02, W-06
+
+> Step 6, small items (approved by Hugo 2026-11-24 as a separate step after the background):
+> `.contentTransition(.numericText())` on the hero temperature; `.symbolEffect(.bounce)` and
+> `.sensoryFeedback(.selection)` when the favourite star is toggled; `.sensoryFeedback(.error)` when a
+> search fails. Not proposed: a success haptic on every loaded forecast (over-feedback; Apple's rule
+> is to keep haptics for meaningful moments).
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real

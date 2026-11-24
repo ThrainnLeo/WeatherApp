@@ -47,9 +47,9 @@ struct SearchView: View {
             // The gradient only shows through if the list's own grey background is hidden.
             .scrollContentBackground(.hidden)
             .background {
-                // `.id` + `.transition` make a theme change a cross-fade instead of a hard cut.
-                theme.gradient
-                    .ignoresSafeArea()
+                // `.id` + `.transition` make a theme change a cross-fade instead of a hard cut,
+                // for the gradient and the animated layers together.
+                WeatherBackground(theme: theme)
                     .id(theme)
                     .transition(.opacity)
             }

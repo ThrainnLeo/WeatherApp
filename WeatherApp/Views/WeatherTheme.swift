@@ -7,7 +7,7 @@ import SwiftUI
 /// (`colorScheme`): every theme except `.day` is dark and tuned for white text (roughly 4.5:1 or
 /// better); `.day` is light and tuned for dark text. The values are estimates and should be checked
 /// on a device, also with "Increase Contrast" on.
-enum WeatherTheme: Equatable {
+enum WeatherTheme: Equatable, CaseIterable {
     /// Not a weather: the light background of the start, loading and error screens by day.
     case day
     /// Not a weather: the dark background of the start, loading and error screens at night.
@@ -28,6 +28,27 @@ enum WeatherTheme: Equatable {
     /// gradient. Only the day sky is light; one value for both means they can't disagree.
     var colorScheme: ColorScheme {
         self == .day ? .light : .dark
+    }
+
+    /// What moves behind the text for this theme, drawn in this order. Storm is rain, only denser and
+    /// with a third cloud: no lightning, because flashes can be a problem for people sensitive to light.
+    /// Counts are starting values, to be tuned on a device; at most 80 elements per theme.
+    var layers: [WeatherLayer] {
+        switch self {
+        case .day: [.sunGlow, .clouds(count: 2)]
+        case .night: [.stars(count: 55)]
+        case .sunny: [.sunGlow, .clouds(count: 1)]
+        case .cloudy: [.clouds(count: 4)]
+        case .rain: [.clouds(count: 2), .rain(count: 40)]
+        case .snow: [.clouds(count: 2), .snow(count: 36)]
+        case .storm: [.clouds(count: 3), .rain(count: 70)]
+        }
+    }
+
+    /// Seconds between frames: the shortest of the layers' intervals, so the fastest layer looks smooth
+    /// and a theme with only slow layers (night: stars) costs less.
+    var frameInterval: Double {
+        layers.map(\.minimumInterval).min() ?? 1
     }
 
     /// The sky for the screens that have no forecast: day from 06:00 up to 18:00 local time, else night.

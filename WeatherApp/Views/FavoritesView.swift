@@ -45,8 +45,8 @@ struct FavoritesView: View {
                 }
             }
             .background {
-                sky.gradient
-                    .ignoresSafeArea()
+                // Gradient only: the main screen is the one with moving layers.
+                WeatherBackground(theme: sky, isAnimated: false)
             }
             .navigationTitle("Favourites")
             .navigationBarTitleDisplayMode(.inline)
