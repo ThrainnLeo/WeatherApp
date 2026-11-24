@@ -712,6 +712,7 @@ Fill in as components are completed. Q26 is always asked first.
 | 4 | Grouping: hourly today / daily rest, in the user's time zone (W-07, W-17 data transformation) | | ☐ |
 | 5 | ViewModel state machine incl. race-condition guard; first search screen (W-01, W-10, W-15, W-16) | | ☐ |
 | 6 | UI polish: hero block, weather-driven background, start screen, loading and error states (W-01, W-06, H-02) | Hugo | ◐ steps 1, 2, 3, 5 done; 4, 6, 7 left; teach-back and PR review pending |
+| 8 | Day/night sky: start, loading and error screens follow the time of day; colour scheme follows the theme; 4 tests (13 cases) (H-02) | Hugo | ◐ code + tests done; teach-back and PR review pending |
 
 ## 9. End-of-session ritual + update log
 After every session:
@@ -732,6 +733,7 @@ After every session:
 | 2026-11-20 | Thrainn | Session 2: SMHI DTO, domain models and ForecastParser (9999 → nil, skipped steps, sorting); 7 parser tests with a real Stockholm fixture. | W-05, W-12, W-17 |
 | 2026-11-20 | Thrainn | Session 3: API client, WeatherError classification, UserDefaults cache and WeatherRepository with cache fallback (`@concurrent`); 11 tests with fakes. | W-05, W-09, W-10, W-15, W-16, W-17 |
 | 2026-11-23 | Hugo | Session 6: UI polish on `feature/ui-polish`: hero block, gradient background per weather (`WeatherTheme`), frosted rows, multicolor symbols, start screen with night sky, redacted loading skeleton and `ContentUnavailableView` for errors. No ViewModel or test changes. | W-01, W-06, H-02 |
+| 2026-11-24 | Hugo | Session 8: time-dependent sky on `feature/hugo-final`: `WeatherTheme.day`, `colorScheme` per theme and `sky(at:)` (06:00–18:00 local time), kept fresh with `.task(id: scenePhase)`; start/loading/error screens and the favourites sheet follow it; replaces "app always dark". 4 new tests (13 cases) in `WeatherThemeTests`. | H-02 |
 
 ## 10. AI usage summary
 Which parts were AI-assisted, which tools and prompts were used (details in `docs/LLM_PROCESS.md`).
