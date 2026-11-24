@@ -463,6 +463,74 @@ Template — copy for each component before coding it:
 - Test ideas: none automated for the views (UX scenarios go to TEST_REPORT, W-18).
 - Requirements: W-03, W-09, W-10
 
+> Spec below approved by Hugo on 2026-11-24 (branch `feature/hugo-final`); Thrainn to review.
+> Choices: light day variant (not the "dark everywhere" fallback); loading and error follow the start screen's sky.
+
+### Day/night sky (time-dependent start screen)
+- Owner (responsible for understanding it): Hugo
+- Tier: Boilerplate (colours, views) · Support (the day-or-night rule and its refresh)
+- Purpose: the start screen follows the time of day: a light day sky between 06:00 and 18:00, the
+  current night sky otherwise (H-02). A sky is a `WeatherTheme`, so the gradient and the colour
+  scheme come from one value and can't disagree.
+- Inputs / outputs:
+  - `WeatherTheme.day` (new case, light blue gradient) and `WeatherTheme.colorScheme: ColorScheme`
+    (`.light` for `.day`, `.dark` for every other theme).
+  - `WeatherTheme.sky(at date: Date, calendar: Calendar = .current) -> WeatherTheme`: `.day` if the
+    local hour is 6…17, else `.night`. Pure function with the date and calendar injected (like
+    `ForecastGrouper`), so a test can pass any time.
+  - `SearchView` holds `@State isDaytime`; `theme` returns the sky for every state without a
+    forecast (idle, loading, failed) and the weather's theme once loaded; the fixed
+    `.preferredColorScheme(.dark)` becomes `.preferredColorScheme(theme.colorScheme)`.
+  - `StartView` gets the sky as a parameter: sun symbol (`sun.max.fill`) by day, moon by night.
+  - `FavoritesView` gets the sky as a parameter, sets its own `.preferredColorScheme` and uses the
+    sky gradient instead of the fixed `.night` one (see edge cases).
+- How day and night are decided: the device's local hour from `Calendar.current`, so it follows the
+  phone's time zone. Not sunrise/sunset: `ForecastStep` has no sun data, and no place is chosen yet
+  on the start screen. Known limit: at Nordic latitudes real daylight differs a lot from 06–18
+  (Kiruna: dark all day in December, sun at midnight in June). Accepted for a start screen.
+- How it updates while the app is open: one task on the screen,
+  `.task(id: scenePhase)`. When the scene becomes `.active` the task runs, sets `isDaytime`
+  straight away, then repeats every 60 s with `Task.sleep`; when the app goes to the background the
+  task is cancelled and stops. Coming back to the app therefore corrects the sky at once, and an app
+  left open shifts within a minute of 06:00 / 18:00. `isDaytime` is only written when the value
+  changes (SwiftUI does not compare, so a write every minute would redraw every minute). The
+  existing `.id(theme)` + `.transition(.opacity)` + `.animation(.smooth, value: theme)` cross-fades
+  the gradient. Alternatives not chosen: `TimelineView` with a schedule for the exact 06:00 / 18:00
+  moments (exact, but it must wrap every view that reads the time and is harder to explain);
+  `Timer.publish` + `.onReceive` (works, but adds Combine to an async/await-only codebase).
+- How it works with `.preferredColorScheme(.dark)` (changes decision "App always uses the dark
+  colour scheme", 2026-11-23, which is replaced if this is approved):
+  - A light sky needs dark text, so the day sky can't live under a forced dark scheme. The scheme
+    now follows the theme: `.light` only for `.day`, `.dark` for the night sky and for all weather
+    themes, whose gradients are unchanged (still tuned for white text).
+  - Text (`.primary` / `.secondary`) and the frosted rows adapt by themselves, so no view needs
+    hard-coded colours. Nav bar, status bar and the keyboard follow the scheme.
+  - Cost: during the day the scheme flips light → dark when a forecast arrives (new search from the
+    start screen) and back to light when the user returns to the start screen. The gradient
+    cross-fades but the system's scheme change is a short, separate fade; check on a device how
+    it looks. If it looks bad, fallback (one-line change): keep `.dark` everywhere and make `.day`
+    a bright blue that still holds 4.5:1 for white text (hardly lighter than `.sunny`).
+- Edge cases:
+  - Loading and error screens use the same sky as the start screen. Otherwise a daytime search
+    would go light → night-dark → weather colours.
+  - `FavoritesView` is a sheet that inherits the scheme. With a fixed night gradient it would show
+    dark text on a dark gradient in daytime, so it takes the sky and sets its own scheme. (Check
+    on a device that a sheet honours its own `.preferredColorScheme`.)
+  - A forecast on screen is not affected when 06:00 / 18:00 passes; its weather theme stays.
+  - Time zone or clock change (travel, manual change): the next tick (≤ 60 s) corrects it.
+  - Reduce Motion: the gradient is a cross-fade, which is allowed; the symbol pulse is off as today.
+    The brightness jump at the exact shift is softened by the cross-fade, not removed.
+  - Contrast: day gradient and `.secondary` text on the frosted rows must be checked by eye
+    (also with Increase Contrast); the values in `WeatherTheme` are estimates.
+  - Previews and screenshots at different hours need the sky injected (a parameter), not the real clock.
+- Test ideas (approved by Hugo 2026-11-24, in `WeatherThemeTests`): `sky(at:)` for 05:59 → night,
+  06:00 → day, 17:59 → day, 18:00 → night, 00:00 → night; the same instant gives different
+  answers with a UTC and a Stockholm calendar (the calendar is really used); `colorScheme` is
+  `.light` only for `.day`. The views have no automated tests (UX scenarios go to TEST_REPORT, W-18).
+- Decision log entry to add if approved: "2026-11-24 — Start/loading/error sky follows the time of
+  day; the colour scheme follows the theme (replaces 'app always dark')".
+- Requirements: H-02, W-06
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
