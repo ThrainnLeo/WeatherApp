@@ -648,6 +648,8 @@ Template — copy for each component before coding it:
 - The three settings:
   1. **Refresh forecast** (`RefreshPolicy`): Always · 15 min · 1 hour (default) · 3 hours. A saved
      forecast younger than this is shown without contacting SMHI. "Always" is today's behaviour.
+     On screen it is worded "Reuse saved forecast for": Never · 15 minutes · 1 hour · 3 hours, because
+     "refresh every hour" would sound like a timer (changed when the screen was built, 2026-11-24).
   2. **Animated background**: on (default) / off. Off draws the gradient only (no layers, no timeline).
      It is separate from Reduce Motion and Low Power Mode, which still pause the layers when it is on.
   3. **Clear saved forecasts**: removes the forecasts saved for offline use, after a confirmation.

@@ -10,6 +10,10 @@ import SwiftUI
 /// Battery: the animation runs at the theme's own frame rate (not 60 fps), and a paused `TimelineView`
 /// stops updating and leaves one still frame.
 struct WeatherBackground: View {
+    /// The `UserDefaults` key of the "Animated background" setting, shared by the settings screen
+    /// and the screen that decides `isAnimated`.
+    static let animatedKey = "animatedBackground"
+
     let theme: WeatherTheme
     /// `false` draws the gradient only. Secondary screens (the day detail, the favourites sheet) use it, so
     /// only one animated background exists at a time and those screens stay calm.

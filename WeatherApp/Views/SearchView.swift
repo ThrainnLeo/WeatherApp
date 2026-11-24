@@ -6,8 +6,20 @@ struct SearchView: View {
     @Bindable var viewModel: SearchViewModel
     let favoritesViewModel: FavoritesViewModel
 
-    /// Whether the favourites sheet is open. Pure screen state, so it lives in the View.
-    @State private var showingFavorites = false
+    /// The two sheets this screen can open. One `.sheet(item:)` for both: two separate sheet modifiers
+    /// on the same view can interfere with each other.
+    private enum PresentedSheet: Identifiable {
+        case favorites
+        case settings
+
+        var id: Self { self }
+    }
+
+    /// Which sheet is open, if any. Pure screen state, so it lives in the View.
+    @State private var presentedSheet: PresentedSheet?
+
+    /// The "Animated background" setting (W-04). Off draws the gradient only.
+    @AppStorage(WeatherBackground.animatedKey) private var animatedBackground = true
 
     /// The sky (day or night) for the screens that have no forecast: start, loading, error.
     /// Kept in step with the clock by the `.task` below.
@@ -38,18 +50,30 @@ struct SearchView: View {
                 DayDetailView(day: day)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        showingFavorites = true
+                        presentedSheet = .favorites
                     } label: {
                         Image(systemName: "list.star")
                     }
                     .accessibilityLabel("Favourites")
+
+                    Button {
+                        presentedSheet = .settings
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
                 }
             }
-            .sheet(isPresented: $showingFavorites) {
-                FavoritesView(viewModel: favoritesViewModel, sky: sky) { place in
-                    viewModel.open(place)
+            .sheet(item: $presentedSheet) { sheet in
+                switch sheet {
+                case .favorites:
+                    FavoritesView(viewModel: favoritesViewModel, sky: sky) { place in
+                        viewModel.open(place)
+                    }
+                case .settings:
+                    SettingsView(sky: sky)
                 }
             }
             .refreshable { await viewModel.refresh() }
@@ -58,7 +82,7 @@ struct SearchView: View {
             .background {
                 // `.id` + `.transition` make a theme change a cross-fade instead of a hard cut,
                 // for the gradient and the animated layers together.
-                WeatherBackground(theme: theme, isPaused: isBackgroundPaused)
+                WeatherBackground(theme: theme, isAnimated: animatedBackground, isPaused: isBackgroundPaused)
                     .id(theme)
                     .transition(.opacity)
             }
@@ -95,7 +119,7 @@ struct SearchView: View {
     /// asked for less motion (Reduce Motion), saves power (Low Power Mode), the app isn't active, or
     /// something covers this screen (the favourites sheet, a day detail). It keeps its last frame.
     private var isBackgroundPaused: Bool {
-        reduceMotion || lowPowerMode || scenePhase != .active || showingFavorites || !path.isEmpty
+        reduceMotion || lowPowerMode || scenePhase != .active || presentedSheet != nil || !path.isEmpty
     }
 
     /// The background for what is on screen: the forecast's weather, or the day/night sky
