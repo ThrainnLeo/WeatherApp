@@ -10,6 +10,9 @@ struct CurrentConditionsView: View {
     /// Shows a star next to the title when set (W-03). `nil` hides it, e.g. in previews.
     var isFavorite = false
     var onToggleFavorite: (() -> Void)? = nil
+    /// When the forecast was downloaded, shown as "Updated 14:15" (W-04). `nil` hides the line, e.g.
+    /// when the offline banner already says "showing data from 14:15".
+    var updatedAt: Date? = nil
 
     // @ScaledMetric makes these sizes follow the user's Dynamic Type setting; a plain number
     // in `.system(size:)` would stay the same however large the user has set their text.
@@ -67,6 +70,13 @@ struct CurrentConditionsView: View {
             if let windSpeed = step.windSpeed {
                 Text("Wind \(windSpeed.formatted(.number.precision(.fractionLength(0)))) m/s")
                     .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            // A saved forecast that was reused shows its original time, so it is clear why nothing changed.
+            if let updatedAt {
+                Text("Updated \(updatedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }

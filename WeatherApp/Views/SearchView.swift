@@ -284,7 +284,9 @@ struct SearchView: View {
                     // never gets a star.
                     onToggleFavorite: viewModel.currentPlace.map { place in
                         { favoritesViewModel.toggle(place) }
-                    }
+                    },
+                    // Not when the offline banner is shown: it already says when the data is from.
+                    updatedAt: display.staleMessage == nil ? display.fetchedAt : nil
                 )
             } else {
                 VStack(spacing: 4) {
