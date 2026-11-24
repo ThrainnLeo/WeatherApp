@@ -13,10 +13,19 @@ struct SearchView: View {
     /// Kept in step with the clock by the `.task` below.
     @State private var sky = WeatherTheme.sky(at: .now)
 
+    /// The day details pushed on top of this screen. The screen owns the path (instead of leaving it to
+    /// `NavigationStack`) so it can tell that it is covered and pause the background behind a detail.
+    @State private var path: [DailyForecast] = []
+
+    /// Low Power Mode, kept up to date by the second `.task` below. Read here, once, for the whole app,
+    /// instead of in every background.
+    @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 inputSection
                 if viewModel.inputMode == .place {
@@ -49,7 +58,7 @@ struct SearchView: View {
             .background {
                 // `.id` + `.transition` make a theme change a cross-fade instead of a hard cut,
                 // for the gradient and the animated layers together.
-                WeatherBackground(theme: theme)
+                WeatherBackground(theme: theme, isPaused: isBackgroundPaused)
                     .id(theme)
                     .transition(.opacity)
             }
@@ -72,6 +81,21 @@ struct SearchView: View {
                 try? await Task.sleep(for: .seconds(60))
             }
         }
+        .task {
+            // Low Power Mode can be switched on or off while the screen is open.
+            for await _ in NotificationCenter.default.notifications(named: .NSProcessInfoPowerStateDidChange) {
+                let enabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+                // SwiftUI doesn't compare values, so only write when it changed.
+                if lowPowerMode != enabled { lowPowerMode = enabled }
+            }
+        }
+    }
+
+    /// The moving background stands still when nobody is looking or when motion isn't wanted: the user
+    /// asked for less motion (Reduce Motion), saves power (Low Power Mode), the app isn't active, or
+    /// something covers this screen (the favourites sheet, a day detail). It keeps its last frame.
+    private var isBackgroundPaused: Bool {
+        reduceMotion || lowPowerMode || scenePhase != .active || showingFavorites || !path.isEmpty
     }
 
     /// The background for what is on screen: the forecast's weather, or the day/night sky
@@ -91,6 +115,10 @@ struct SearchView: View {
 
     // MARK: - Input
 
+    /// One definition for "a request is already running", used by both the buttons and Return.
+    private var isSearchingPlaces: Bool { viewModel.placeSearch == .searching }
+    private var isLoadingForecast: Bool { viewModel.state == .loading }
+
     private var inputSection: some View {
         Section {
             Picker("Search by", selection: $viewModel.inputMode) {
@@ -106,21 +134,24 @@ struct SearchView: View {
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
-                    .onSubmit { viewModel.searchPlaces() }
+                    // Return on the keyboard follows the same rule as the button below: nothing while a
+                    // search is running. Otherwise a double Return cancels the first request and sends a
+                    // second one, and the geocoder limits how many requests a key may send.
+                    .onSubmit { if !isSearchingPlaces { viewModel.searchPlaces() } }
                 Button("Search") { viewModel.searchPlaces() }
-                    .disabled(viewModel.placeSearch == .searching)
+                    .disabled(isSearchingPlaces)
             case .coordinates:
                 // Numbers-and-punctuation keyboard: the plain number pad has no minus sign.
                 TextField("Latitude, e.g. 59.33", text: $viewModel.latitudeText)
                     .keyboardType(.numbersAndPunctuation)
                     .submitLabel(.search)
-                    .onSubmit { viewModel.search() }
+                    .onSubmit { if !isLoadingForecast { viewModel.search() } }
                 TextField("Longitude, e.g. 18.07", text: $viewModel.longitudeText)
                     .keyboardType(.numbersAndPunctuation)
                     .submitLabel(.search)
-                    .onSubmit { viewModel.search() }
+                    .onSubmit { if !isLoadingForecast { viewModel.search() } }
                 Button("Show forecast") { viewModel.search() }
-                    .disabled(viewModel.state == .loading)
+                    .disabled(isLoadingForecast)
             }
         }
         .frostedRows()

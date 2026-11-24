@@ -566,7 +566,7 @@ Template — copy for each component before coding it:
     gradient and its glow is warm; the dark themes use white at low opacity. The layer colours are
     chosen in the view from `theme.colorScheme`, not stored in the theme.
 - Inputs / outputs:
-  - `WeatherBackground(theme: WeatherTheme, isAnimated: Bool = true)` (new view, replaces
+  - `WeatherBackground(theme: WeatherTheme, isAnimated: Bool = true, isPaused: Bool = false)` (new view, replaces
     `theme.gradient.ignoresSafeArea()...`): the gradient plus one `TimelineView(.animation(minimumInterval:
     theme.frameInterval, paused:))` that draws one `Canvas`. Clouds are the SF Symbol `cloud.fill`,
     passed to `Canvas` as a symbol so it is resolved once, not every frame.
@@ -589,10 +589,17 @@ Template — copy for each component before coding it:
   - Low Power Mode on → paused, the same still frame. Read with `ProcessInfo.isLowPowerModeEnabled`
     and updated from `NSProcessInfoPowerStateDidChange` (a `.task` over `NotificationCenter.notifications`).
   - App not `.active` (`scenePhase`) → paused.
+  - Who decides (changed 2026-11-24 after the performance review): `SearchView` decides, once, from
+    Reduce Motion, Low Power Mode, `scenePhase` and whether something covers it, and hands the result
+    to `WeatherBackground(isPaused:)`. `WeatherBackground` itself holds no state, no environment reads
+    and no task, so the gradient-only backgrounds (day detail, favourites sheet) cost nothing extra and
+    there is one Low Power Mode listener in the app, not one per background.
   - Frame rate is capped per theme (table above): a slow cloud needs 20 fps, not 60; stars 10 fps.
   - Budget: at most 80 moving elements per theme; one `Canvas` pass; no blur, no per-frame view updates.
-  - A screen that covers the main one (day detail, sheet) should stop its timeline; to be confirmed
-    with the CPU gauge. Acceptance: Xcode's Energy Impact stays "Low" on a real device after a few
+  - Covered → paused: while the favourites sheet is open or a day detail is pushed, the main
+    background is paused. `SearchView` knows both: `showingFavorites`, and a `NavigationStack(path:)`
+    it owns (`[DailyForecast]`), which is not empty while a detail is shown. To be confirmed with the
+    CPU gauge on a device. Acceptance: Xcode's Energy Impact stays "Low" on a real device after a few
     minutes on each theme. The Simulator is not representative for this.
 - Edge cases: the text stays readable (cloud opacity ≤ about 0.15 on dark themes, rain streak ≤ 0.3,
   checked by eye, also with Increase Contrast; the hero block sits directly on the background, so it

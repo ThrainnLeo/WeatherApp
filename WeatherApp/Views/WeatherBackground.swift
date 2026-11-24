@@ -3,22 +3,19 @@ import SwiftUI
 /// The background of a screen: the theme's gradient and, on top of it, its animated layers (clouds,
 /// rain, snow, sun glow or stars). Sits behind the text, so it is faint and never takes focus (H-02).
 ///
-/// Battery: the animation runs at the theme's own frame rate (not 60 fps) and pauses, leaving one still
-/// frame, when Reduce Motion or Low Power Mode is on or the app isn't active.
+/// This view decides nothing about *when* to move: the screen that owns it passes `isPaused`
+/// (Reduce Motion, Low Power Mode, app not active, something covering the screen). So it holds no
+/// state and no task, and a gradient-only background costs nothing beyond the gradient.
+///
+/// Battery: the animation runs at the theme's own frame rate (not 60 fps), and a paused `TimelineView`
+/// stops updating and leaves one still frame.
 struct WeatherBackground: View {
     let theme: WeatherTheme
     /// `false` draws the gradient only. Secondary screens (the day detail, the favourites sheet) use it, so
     /// only one animated background exists at a time and those screens stay calm.
     var isAnimated = true
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-    /// A paused `TimelineView` stops updating, so the `Canvas` keeps the one frame it last drew.
-    private var isPaused: Bool {
-        reduceMotion || lowPowerMode || scenePhase != .active
-    }
+    /// `true` freezes the layers on the frame they are showing.
+    var isPaused = false
 
     var body: some View {
         ZStack {
@@ -28,14 +25,6 @@ struct WeatherBackground: View {
             }
         }
         .ignoresSafeArea()
-        .task {
-            // Low Power Mode can be switched on or off while the screen is open.
-            for await _ in NotificationCenter.default.notifications(named: .NSProcessInfoPowerStateDidChange) {
-                let enabled = ProcessInfo.processInfo.isLowPowerModeEnabled
-                // SwiftUI doesn't compare values, so only write when it changed.
-                if lowPowerMode != enabled { lowPowerMode = enabled }
-            }
-        }
     }
 
     private var animatedLayers: some View {
