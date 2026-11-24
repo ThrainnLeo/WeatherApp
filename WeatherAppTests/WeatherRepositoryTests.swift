@@ -81,6 +81,97 @@ struct WeatherRepositoryTests {
         #expect(result.forecast == cached.forecast)
     }
 
+    // MARK: - R7-R12: reuse a saved forecast that is fresh enough (W-04)
+
+    private let oneHour: TimeInterval = 3600
+
+    @Test func freshSavedForecastIsReusedWithoutAnyRequest() async throws {
+        let cached = CachedForecast(forecast: makeForecast(temperature: -2), fetchedAt: now.addingTimeInterval(-600))
+        let cache = FakeCacheStore(prefilled: [stockholm: cached])
+        let api = FakeAPIClient(.success(validJSON))
+        let repository = makeRepository(api: api, cache: cache)
+
+        let result = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: oneHour)
+
+        #expect(result.forecast == cached.forecast)
+        #expect(result.fetchedAt == cached.fetchedAt)
+        #expect(result.staleReason == nil)
+        #expect(api.callCount == 0)
+        #expect(cache.saveCount == 0)
+    }
+
+    // The limit itself is old: 3599 s is reused, 3600 s is fetched again.
+    @Test(arguments: [(age: 3599.0, isReused: true), (age: 3600.0, isReused: false)])
+    func theLimitItselfCountsAsOld(age: Double, isReused: Bool) async throws {
+        let cached = CachedForecast(forecast: makeForecast(temperature: -2), fetchedAt: now.addingTimeInterval(-age))
+        let api = FakeAPIClient(.success(validJSON))
+        let repository = makeRepository(api: api, cache: FakeCacheStore(prefilled: [stockholm: cached]))
+
+        let result = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: oneHour)
+
+        #expect(api.callCount == (isReused ? 0 : 1))
+        #expect((result.forecast == cached.forecast) == isReused)
+    }
+
+    @Test func olderSavedForecastIsFetchedAgain() async throws {
+        let cached = CachedForecast(forecast: makeForecast(temperature: -2), fetchedAt: now.addingTimeInterval(-7200))
+        let cache = FakeCacheStore(prefilled: [stockholm: cached])
+        let api = FakeAPIClient(.success(validJSON))
+        let repository = makeRepository(api: api, cache: cache)
+
+        let result = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: oneHour)
+
+        #expect(api.callCount == 1)
+        #expect(result.staleReason == nil)
+        #expect(result.fetchedAt == now)
+        #expect(result.forecast.steps.first?.temperature == 3.5)
+    }
+
+    @Test func noLimitFetchesEvenIfTheSavedForecastIsFresh() async throws {
+        // This is pull to refresh and "Try again": the user asked for new data.
+        let cached = CachedForecast(forecast: makeForecast(temperature: -2), fetchedAt: now.addingTimeInterval(-60))
+        let api = FakeAPIClient(.success(validJSON))
+        let repository = makeRepository(api: api, cache: FakeCacheStore(prefilled: [stockholm: cached]))
+
+        let result = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: nil)
+
+        #expect(api.callCount == 1)
+        #expect(result.forecast.steps.first?.temperature == 3.5)
+    }
+
+    @Test func savedForecastFromTheFutureIsNotReused() async throws {
+        // `fetchedAt` after "now": the clock was set back, so the age is unknown and can't be trusted.
+        let cached = CachedForecast(forecast: makeForecast(temperature: -2), fetchedAt: now.addingTimeInterval(600))
+        let api = FakeAPIClient(.success(validJSON))
+        let repository = makeRepository(api: api, cache: FakeCacheStore(prefilled: [stockholm: cached]))
+
+        _ = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: oneHour)
+
+        #expect(api.callCount == 1)
+    }
+
+    @Test func oldSavedForecastWithAFailingRequestStillFallsBack() async throws {
+        // Too old to reuse, so the app asks SMHI; the request fails; the old copy is shown with the reason.
+        let cached = CachedForecast(forecast: makeForecast(temperature: -2), fetchedAt: now.addingTimeInterval(-7200))
+        let api = FakeAPIClient(.failure(.offline))
+        let repository = makeRepository(api: api, cache: FakeCacheStore(prefilled: [stockholm: cached]))
+
+        let result = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: oneHour)
+
+        #expect(api.callCount == 1)
+        #expect(result.staleReason == .offline)
+        #expect(result.fetchedAt == cached.fetchedAt)
+    }
+
+    @Test func noSavedForecastFetchesWhateverTheLimit() async throws {
+        let api = FakeAPIClient(.success(validJSON))
+        let repository = makeRepository(api: api, cache: FakeCacheStore())
+
+        _ = try await repository.forecast(for: stockholm, reusingCacheYoungerThan: oneHour)
+
+        #expect(api.callCount == 1)
+    }
+
     // MARK: - Helpers
 
     private func makeRepository(api: FakeAPIClient, cache: FakeCacheStore) -> WeatherRepository {

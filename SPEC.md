@@ -622,6 +622,107 @@ Template — copy for each component before coding it:
 > search fails. Not proposed: a success haptic on every loaded forecast (over-feedback; Apple's rule
 > is to keep haptics for meaningful moments).
 
+> Spec below approved by Hugo on 2026-11-24 (W-04 settings, branch `feature/W-04-settings`); Thrainn to review.
+> Choices: 1 hour as the default refresh; the "Updated" text is enough to show the age of a reused forecast.
+
+### Settings screen (W-04)
+- Owner (responsible for understanding it): Hugo
+- Tier: Core (the "reuse a fresh saved forecast" rule in `WeatherRepository`, and how `SearchViewModel`
+  uses it) · Support (`RefreshPolicy`, `SettingsViewModel`, `CacheStore.removeAll`) · Boilerplate
+  (`SettingsView`, the gear button, the "Updated" text)
+- Purpose: let the user choose how often the app asks SMHI for new data, and a few UI preferences.
+  Three settings, no unit switching (°C/°F, m/s) — decided by the students on 2026-11-24 because
+  `TemperatureText` is used in nearly every view and the switch would touch them all.
+- **How we read "data refresh rate" (decision, with reasons).** We read it as *how old a saved forecast
+  may be before the app fetches a new one* ("cache age"), not as an automatic reload on a timer.
+  - Why cache age: (1) SMHI renews its forecast about once an hour, and its answers say so
+    (`cache-control: max-age=3600`), so asking more often returns the same data; (2) it saves network
+    use and battery, which we have just worked to reduce (the performance review of the animated
+    background); (3) it works offline and with the existing fallback (W-09, W-10); (4) the decision log
+    already says "a 'use cache if fresh' rule comes with the refresh-rate setting (W-04)", and today the
+    repository always tries the network first; (5) a user always keeps full control, because pull to
+    refresh and "Try again" always fetch new data.
+  - Not chosen: a timer that reloads while the app is open. It costs battery, needs a task to manage
+    (cancel, pause in the background, avoid doubles), and the data it fetches would normally be
+    unchanged.
+- The three settings:
+  1. **Refresh forecast** (`RefreshPolicy`): Always · 15 min · 1 hour (default) · 3 hours. A saved
+     forecast younger than this is shown without contacting SMHI. "Always" is today's behaviour.
+  2. **Animated background**: on (default) / off. Off draws the gradient only (no layers, no timeline).
+     It is separate from Reduce Motion and Low Power Mode, which still pause the layers when it is on.
+  3. **Clear saved forecasts**: removes the forecasts saved for offline use, after a confirmation.
+- Inputs / outputs:
+  - `RefreshPolicy` (new enum, `Int` raw values so `@AppStorage` can store it): `maxCacheAge: TimeInterval`
+    (0, 900, 3600, 10800 s); `RefreshPolicy.key`; `RefreshPolicy.stored(in:)` (reads `UserDefaults`, the
+    default argument is `.standard` so a test can pass its own; a missing or unknown value gives
+    `.hour1`; a missing value is not read as `0`, which would mean "Always").
+  - `WeatherRepository.forecast(for:reusingCacheYoungerThan:)` (the new parameter is `TimeInterval?`,
+    `nil` = never reuse, i.e. always fetch). If a saved forecast exists and `now − fetchedAt` is below
+    the limit, it is returned at once as `ForecastResult(forecast, fetchedAt: <its original time>,
+    staleReason: nil)`, with no request and no new save. Otherwise as today: fetch, parse, save, and on
+    failure fall back to the saved forecast with `staleReason`.
+  - `SearchViewModel` gets `refreshPolicy: () -> RefreshPolicy` (injected, default
+    `RefreshPolicy.stored()`, the same way `now` is injected). Choosing a place, a coordinate search and
+    opening a favourite pass `refreshPolicy().maxCacheAge`; pull to refresh and "Try again" pass `nil`.
+  - `CacheStore.removeAll()` (new protocol method) and `UserDefaultsCacheStore.removeAll()`: removes
+    only the keys that start with `forecast.`, so favourites and settings are kept.
+    `WeatherRepository.clearSavedForecasts()` forwards it.
+  - `SettingsViewModel` (new, `@Observable` + `@MainActor`, repository injected): `clearSavedForecasts()`
+    and `didClear` (for the confirmation text). The View never touches the repository.
+  - `SettingsView(sky:)`: a sheet like `FavoritesView` (`NavigationStack`, `Form`, "Done", the sky
+    gradient, its own colour scheme from `sky`). The refresh picker and the animation switch use
+    `@AppStorage` (decision log: "Settings stored with `@AppStorage`"), with `RefreshPolicy.key` shared
+    with the ViewModel's default. Opened with a gear button (`gearshape`) in the toolbar next to the
+    favourites button. `SearchView` reads `@AppStorage("animatedBackground")` for `isAnimated`.
+- **"Updated" text:** below the weather summary in the hero block: "Updated 14:15" (`fetchedAt`,
+  short time), caption size, secondary colour. Shown for every loaded forecast whose `staleMessage` is
+  `nil`; when the offline banner is shown it already says "showing data from 14:15", so no second
+  line. A reused saved forecast shows its original time, so it is clear why nothing changed. Part of
+  the hero's combined VoiceOver text.
+- **What happens to the favourites' last known temperature when the forecasts are cleared:**
+  - The favourites list itself is unchanged: it is stored separately (`UserDefaultsFavoritesStore`).
+  - `FavoritesViewModel.lastKnownTemperature` reads the saved forecast, which is gone, so it returns
+    `nil` and the row simply shows no temperature (the view already hides the number when it is `nil`).
+    No placeholder, no error.
+  - A temperature comes back for a place the next time that place is loaded (every successful load
+    saves again): open the favourite, or search for it.
+  - `FavoritesView` reads the cache when it is drawn, and Settings and Favourites are separate sheets,
+    so the list is always drawn after the clearing; no refresh signal is needed.
+  - The confirmation text says so: "Saved forecasts are used when you are offline. Favourites are
+    kept. Offline, a place shows nothing until you have loaded it again."
+- Edge cases:
+  - A saved forecast with `fetchedAt` in the future (the clock was set back) is not reused: age < 0
+    counts as old, so the app fetches.
+  - The limit is checked when a place is chosen; changing the setting does not reload what is on screen.
+  - A saved forecast within the limit is also used offline (it never needed the network), so W-10
+    still holds; an older one offline falls back as today, with the banner.
+  - Clearing while a request is running: that request saves its result afterwards, so one forecast can
+    reappear. Accepted.
+  - The forecast on screen stays when the saved ones are cleared. Pull to refresh offline right after
+    clearing then has no saved forecast to fall back on and shows the error screen (the existing rule
+    "no cache, no data"); the confirmation text above warns about it.
+  - First launch: refresh 1 hour, animation on.
+  - Reduce Motion and Low Power Mode keep working whatever the animation switch says.
+- Test ideas (approved by Hugo 2026-11-24; `FakeAPIClient` gets a call counter
+  and `FakeCacheStore` a `removeAll`, both in the test target):
+  - Repository: a saved forecast younger than the limit gives no request, `staleReason == nil` and its
+    original `fetchedAt`; an older one fetches; `nil` fetches even if the saved one is fresh; a future
+    `fetchedAt` fetches; an older one with a failing request still falls back with `staleReason`; a
+    reused forecast is not saved again.
+  - `RefreshPolicy`: the four `maxCacheAge` values; an unknown raw value gives `.hour1`.
+  - `UserDefaultsCacheStore.removeAll`: removes `forecast.*` keys and keeps another key (a throwaway
+    `UserDefaults(suiteName:)`).
+  - `FavoritesViewModel`: after the cache is cleared `lastKnownTemperature` is `nil` and the favourites
+    are unchanged.
+  - `SearchViewModel` (it has no tests yet): choosing a place with a fresh saved forecast makes no
+    request, pull to refresh makes one.
+  - The views have no automated tests (UX scenarios go to TEST_REPORT, W-18).
+- Steps (small, each explained and checked in the simulator before the next): 1) this spec; 2) `RefreshPolicy`
+  and the repository rule with tests; 3) `SearchViewModel` wiring and the "Updated" text;
+  4) `SettingsView`, the gear button and the animation switch; 5) clearing saved forecasts
+  (`CacheStore.removeAll`, `SettingsViewModel`) with tests; 6) SPEC plan, update log and decision log.
+- Requirements: W-04, W-09, W-10, H-02
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
