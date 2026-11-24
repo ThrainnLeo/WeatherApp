@@ -478,7 +478,7 @@ Template — copy for each component before coding it:
   - `WeatherTheme.sky(at date: Date, calendar: Calendar = .current) -> WeatherTheme`: `.day` if the
     local hour is 6…17, else `.night`. Pure function with the date and calendar injected (like
     `ForecastGrouper`), so a test can pass any time.
-  - `SearchView` holds `@State isDaytime`; `theme` returns the sky for every state without a
+  - `SearchView` holds `@State sky` (the day or night `WeatherTheme`); `theme` returns the sky for every state without a
     forecast (idle, loading, failed) and the weather's theme once loaded; the fixed
     `.preferredColorScheme(.dark)` becomes `.preferredColorScheme(theme.colorScheme)`.
   - `StartView` gets the sky as a parameter: sun symbol (`sun.max.fill`) by day, moon by night.
@@ -489,10 +489,10 @@ Template — copy for each component before coding it:
   on the start screen. Known limit: at Nordic latitudes real daylight differs a lot from 06–18
   (Kiruna: dark all day in December, sun at midnight in June). Accepted for a start screen.
 - How it updates while the app is open: one task on the screen,
-  `.task(id: scenePhase)`. When the scene becomes `.active` the task runs, sets `isDaytime`
+  `.task(id: scenePhase)`. When the scene becomes `.active` the task runs, sets `sky`
   straight away, then repeats every 60 s with `Task.sleep`; when the app goes to the background the
   task is cancelled and stops. Coming back to the app therefore corrects the sky at once, and an app
-  left open shifts within a minute of 06:00 / 18:00. `isDaytime` is only written when the value
+  left open shifts within a minute of 06:00 / 18:00. `sky` is only written when the value
   changes (SwiftUI does not compare, so a write every minute would redraw every minute). The
   existing `.id(theme)` + `.transition(.opacity)` + `.animation(.smooth, value: theme)` cross-fades
   the gradient. Alternatives not chosen: `TimelineView` with a schedule for the exact 06:00 / 18:00
@@ -632,7 +632,7 @@ Template — copy for each component before coding it:
     when called from the main actor (approachable concurrency setting); only `@concurrent` moves
     parsing off the main thread (W-15).
 
-- **2026-11-23 — App always uses the dark colour scheme**
+- **2026-11-23 — App always uses the dark colour scheme** *(superseded 2026-11-24, see "Start/loading/error sky follows the time of day" below)*
   - `.preferredColorScheme(.dark)` in `SearchView`; gradients are fixed colours, not light/dark pairs.
   - Alternatives: light and dark gradient pairs; dark only while a forecast is shown
   - Why: white text on every gradient with no hard-coded text colours, and no grey → colour flash
@@ -650,6 +650,22 @@ Template — copy for each component before coding it:
 - **2026-11-23 — No quick-pick cities on the start screen**
   - Tried five (Stockholm, Oslo, Helsinki, Copenhagen, Kiruna) and removed them on our decision.
   - Note: Reykjavik is outside SMHI's forecast area (404), so Iceland can't be offered.
+
+- **2026-11-24 — Start/loading/error sky follows the time of day; the colour scheme follows the theme**
+  - `WeatherTheme.sky(at:)` gives `.day` from 06:00 up to 18:00 local time, else `.night`; `SearchView`
+    keeps it fresh with `.task(id: scenePhase)` (checked every 60 s while the app is active, and
+    at once when the app returns). `WeatherTheme.colorScheme` is `.light` for `.day` and `.dark`
+    for everything else; `SearchView` and `FavoritesView` use it in `.preferredColorScheme`.
+    Replaces "App always uses the dark colour scheme" (2026-11-23).
+  - Alternatives: keep `.dark` everywhere with a bright blue day sky (fallback, not needed);
+    `TimelineView` with a schedule for the exact shift; `Timer.publish` + `.onReceive`;
+    real sunrise/sunset (no sun data in `ForecastStep`, no place on the start screen).
+  - Why: the students wanted a light screen by day. One theme value decides both gradient and
+    scheme, so they can't disagree; loading and error use the same sky, so a daytime search does
+    not go light → night-dark → weather colours.
+  - Consequence: during the day the scheme flips light → dark when a forecast arrives. Seen in the
+    simulator 2026-11-24: a soft cross-fade, with a slight blink, judged acceptable. Clock hours
+    are wrong at Nordic latitudes (dark all day in Kiruna in December); accepted for a start screen.
 
 ## 7. Oral exam map
 Fill in as components are completed. Q26 is always asked first.

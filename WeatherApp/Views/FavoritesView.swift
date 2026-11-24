@@ -4,6 +4,10 @@ import SwiftUI
 /// Tapping a place closes the sheet and loads its forecast; swiping left deletes it.
 struct FavoritesView: View {
     let viewModel: FavoritesViewModel
+    /// The day or night sky of the screen behind the sheet. The sheet sets its own colour scheme
+    /// from it: the main screen may be dark (a weather theme) while the sky is day, and a light
+    /// gradient with white text, or the other way round, would be unreadable.
+    let sky: WeatherTheme
     /// What happens when a place is tapped. The sheet doesn't know about `SearchViewModel`;
     /// `SearchView` decides, which keeps this view reusable and the ViewModels separate.
     let onOpen: (Place) -> Void
@@ -41,7 +45,7 @@ struct FavoritesView: View {
                 }
             }
             .background {
-                WeatherTheme.night.gradient
+                sky.gradient
                     .ignoresSafeArea()
             }
             .navigationTitle("Favourites")
@@ -52,6 +56,7 @@ struct FavoritesView: View {
                 }
             }
         }
+        .preferredColorScheme(sky.colorScheme)
     }
 
     private func row(for place: Place) -> some View {
@@ -87,8 +92,21 @@ private struct PreviewFavoritesStore: FavoritesStore {
         store: PreviewFavoritesStore(places: places),
         repository: WeatherRepository(apiClient: SMHIAPIClient(), cache: UserDefaultsCacheStore())
     )
-    return FavoritesView(viewModel: viewModel) { _ in }
-        .preferredColorScheme(.dark)
+    return FavoritesView(viewModel: viewModel, sky: .night) { _ in }
+}
+
+#Preview("With favourites, day") {
+    let places = [
+        Place(name: "Stockholm", detail: "Stockholms kommun, Stockholms län, Sverige",
+              coordinate: Coordinate(latitude: 59.3251, longitude: 18.0711)),
+        Place(name: "Kiruna", detail: "Kiruna kommun, Norrbottens län, Sverige",
+              coordinate: Coordinate(latitude: 67.8558, longitude: 20.2253)),
+    ]
+    let viewModel = FavoritesViewModel(
+        store: PreviewFavoritesStore(places: places),
+        repository: WeatherRepository(apiClient: SMHIAPIClient(), cache: UserDefaultsCacheStore())
+    )
+    return FavoritesView(viewModel: viewModel, sky: .day) { _ in }
 }
 
 #Preview("Empty") {
@@ -96,6 +114,5 @@ private struct PreviewFavoritesStore: FavoritesStore {
         store: PreviewFavoritesStore(places: []),
         repository: WeatherRepository(apiClient: SMHIAPIClient(), cache: UserDefaultsCacheStore())
     )
-    return FavoritesView(viewModel: viewModel) { _ in }
-        .preferredColorScheme(.dark)
+    return FavoritesView(viewModel: viewModel, sky: .night) { _ in }
 }

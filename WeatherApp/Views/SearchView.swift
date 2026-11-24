@@ -9,6 +9,12 @@ struct SearchView: View {
     /// Whether the favourites sheet is open. Pure screen state, so it lives in the View.
     @State private var showingFavorites = false
 
+    /// The sky (day or night) for the screens that have no forecast: start, loading, error.
+    /// Kept in step with the clock by the `.task` below.
+    @State private var sky = WeatherTheme.sky(at: .now)
+
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         NavigationStack {
             List {
@@ -33,7 +39,7 @@ struct SearchView: View {
                 }
             }
             .sheet(isPresented: $showingFavorites) {
-                FavoritesView(viewModel: favoritesViewModel) { place in
+                FavoritesView(viewModel: favoritesViewModel, sky: sky) { place in
                     viewModel.open(place)
                 }
             }
@@ -49,18 +55,31 @@ struct SearchView: View {
             }
             .animation(.smooth, value: theme)
         }
-        // Every gradient is dark, so the whole app uses the dark colour scheme: then `.primary` /
-        // `.secondary` text and the materials are light-on-dark without hard-coded colours.
-        // Change this one line to hand the choice back to the user's own light/dark setting.
-        .preferredColorScheme(.dark)
+        // The theme says which scheme it needs: light for the day sky, dark for everything else.
+        // Then `.primary` / `.secondary` text and the materials fit the gradient without
+        // hard-coded colours.
+        .preferredColorScheme(theme.colorScheme)
+        // Runs while the app is active and stops (is cancelled) in the background. Coming back
+        // to the app starts it again, which corrects the sky at once; an app left open changes
+        // within a minute of 06:00 / 18:00.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                let current = WeatherTheme.sky(at: .now)
+                // SwiftUI doesn't compare values, so only write when it changed.
+                if sky != current { sky = current }
+                // `try?` is fine: cancellation ends the loop through `Task.isCancelled`.
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
     }
 
-    /// The background for what is on screen: the forecast's weather, or the night sky when
-    /// there is no forecast (start, loading, error).
+    /// The background for what is on screen: the forecast's weather, or the day/night sky
+    /// when there is no forecast (start, loading, error).
     private var theme: WeatherTheme {
-        guard case .loaded(let display) = viewModel.state else { return .night }
+        guard case .loaded(let display) = viewModel.state else { return sky }
         let condition = display.grouped.current?.condition ?? display.grouped.days.first?.condition
-        return condition?.theme ?? .night
+        return condition?.theme ?? sky
     }
 
     /// High and low over the hours left today (what `today` holds), or `nil` when none are left.
@@ -157,6 +176,7 @@ struct SearchView: View {
             // Sits directly on the gradient, like the forecast's hero block: no card, no separator.
             Section {
                 StartView(
+                    sky: sky,
                     hint: viewModel.inputMode == .place
                         ? "Search for a place above to see its forecast."
                         : "Enter coordinates above to see the forecast. Stockholm is 59.33, 18.07."
