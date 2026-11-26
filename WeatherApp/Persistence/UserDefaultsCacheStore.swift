@@ -23,9 +23,19 @@ nonisolated struct UserDefaultsCacheStore: CacheStore {
         return try? JSONDecoder().decode(CachedForecast.self, from: data)
     }
 
+    /// Every forecast key starts with this, which is how `removeAll()` finds them.
+    static let keyPrefix = "forecast."
+
+    func removeAll() {
+        // Only our own keys: the same `UserDefaults` also holds the favourites and the settings.
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(Self.keyPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// Rounded to 2 decimals (about 1 km), so the same city found twice with slightly
     /// different coordinates shares one cache entry. `String(format:)` always uses a decimal point.
     static func key(for coordinate: Coordinate) -> String {
-        String(format: "forecast.%.2f,%.2f", coordinate.latitude, coordinate.longitude)
+        String(format: keyPrefix + "%.2f,%.2f", coordinate.latitude, coordinate.longitude)
     }
 }

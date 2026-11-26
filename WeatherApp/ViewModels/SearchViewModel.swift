@@ -18,10 +18,17 @@ final class SearchViewModel {
     /// The forecast part of the screen, shared by both modes.
     private(set) var state: LoadState = .idle
 
+    /// The place whose forecast is loading or shown, so the star button knows what to save (W-03).
+    /// For a coordinate search it is a `Place` named after its coordinates.
+    private(set) var currentPlace: Place?
+
     private let repository: WeatherRepository
     private let placeRepository: PlaceRepository
     private let grouper: ForecastGrouper
     private let now: () -> Date
+    /// The refresh setting (W-04): how old a saved forecast may be and still be shown without a request.
+    /// Injected like `now`, so a test can say "the user chose 15 minutes".
+    private let refreshPolicy: () -> RefreshPolicy
 
     /// The running forecast request, so a new search can cancel it.
     private var currentTask: Task<Void, Never>?
@@ -39,12 +46,14 @@ final class SearchViewModel {
         repository: WeatherRepository,
         placeRepository: PlaceRepository,
         grouper: ForecastGrouper = ForecastGrouper(),
-        now: @escaping () -> Date = { Date() }
+        now: @escaping () -> Date = { Date() },
+        refreshPolicy: @escaping () -> RefreshPolicy = { RefreshPolicy.stored() }
     ) {
         self.repository = repository
         self.placeRepository = placeRepository
         self.grouper = grouper
         self.now = now
+        self.refreshPolicy = refreshPolicy
     }
 
     // MARK: - Place mode
@@ -82,8 +91,18 @@ final class SearchViewModel {
         latestPlaceRequestID = UUID()
         placeSearch = .idle
         placeQuery = place.name
+        currentPlace = place
         state = .loading
-        load(place.coordinate, title: place.detail.isEmpty ? place.name : "\(place.name), \(place.detail)")
+        load(
+            place.coordinate,
+            title: place.detail.isEmpty ? place.name : "\(place.name), \(place.detail)",
+            reusingSavedForecast: true
+        )
+    }
+
+    /// Opens a favourite: the same path as choosing a place from the search results.
+    func open(_ favorite: Place) {
+        select(favorite)
     }
 
     // MARK: - Coordinates mode
@@ -95,10 +114,14 @@ final class SearchViewModel {
             cancelPendingRequest()
             // Forget the previous place, so "Try again" can't reload it by mistake.
             lastCoordinate = nil
+            currentPlace = nil
             state = .failed(UserMessages.message(for: error))
         case .success(let coordinate):
+            let title = Self.title(for: coordinate)
+            // Decision 3: coordinate searches can be favourites, named after their coordinates.
+            currentPlace = Place(name: title, detail: "", coordinate: coordinate)
             state = .loading
-            load(coordinate, title: Self.title(for: coordinate))
+            load(coordinate, title: title, reusingSavedForecast: true)
         }
     }
 
@@ -111,29 +134,37 @@ final class SearchViewModel {
             return
         }
         state = .loading
-        load(lastCoordinate, title: lastTitle)
+        // The user asked again, so the saved forecast is not reused: always ask SMHI.
+        load(lastCoordinate, title: lastTitle, reusingSavedForecast: false)
     }
 
     /// Reloads the current place without clearing it, for pull to refresh. Returns when done,
-    /// which is what SwiftUI's `.refreshable` waits for.
+    /// which is what SwiftUI's `.refreshable` waits for. Pulling down always asks SMHI, whatever the setting.
     func refresh() async {
         guard let lastCoordinate else { return }
-        await load(lastCoordinate, title: lastTitle).value
+        await load(lastCoordinate, title: lastTitle, reusingSavedForecast: false).value
     }
 
+    /// `reusingSavedForecast`: `true` when the user *chose* a place (the refresh setting decides if a
+    /// saved forecast is fresh enough to show); `false` when the user *asked for new data* (pull to
+    /// refresh, "Try again").
     @discardableResult
-    private func load(_ coordinate: Coordinate, title: String) -> Task<Void, Never> {
+    private func load(
+        _ coordinate: Coordinate, title: String, reusingSavedForecast: Bool
+    ) -> Task<Void, Never> {
         cancelPendingRequest()
         let requestID = UUID()
         latestRequestID = requestID
         lastCoordinate = coordinate
         lastTitle = title
+        // Read here, on the main actor, so the choice at the moment of the tap is the one that counts.
+        let maxCacheAge: TimeInterval? = reusingSavedForecast ? refreshPolicy().maxCacheAge : nil
 
         let task = Task {
             let newState: LoadState
             // `throws(WeatherError)` tells the compiler the catch only ever gets a WeatherError.
             do throws(WeatherError) {
-                let result = try await repository.forecast(for: coordinate)
+                let result = try await repository.forecast(for: coordinate, reusingCacheYoungerThan: maxCacheAge)
                 newState = .loaded(makeDisplay(from: result, title: title))
             } catch {
                 // A newer search replaced this one; there is nothing to tell the user.

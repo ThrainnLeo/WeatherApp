@@ -24,8 +24,8 @@ struct DayDetailView: View {
         }
         .scrollContentBackground(.hidden)
         .background {
-            day.condition.theme.gradient
-                .ignoresSafeArea()
+            // Gradient only: the main screen is the one with moving layers.
+            WeatherBackground(theme: day.condition.theme, isAnimated: false)
         }
         .navigationTitle(day.date.formatted(.dateTime.weekday(.wide).day().month(.wide)))
         .navigationBarTitleDisplayMode(.inline)

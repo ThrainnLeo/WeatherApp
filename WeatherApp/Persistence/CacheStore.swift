@@ -5,4 +5,6 @@ import Foundation
 nonisolated protocol CacheStore: Sendable {
     func save(_ cached: CachedForecast, for coordinate: Coordinate)
     func load(for coordinate: Coordinate) -> CachedForecast?
+    /// Forgets every saved forecast (the "Clear saved forecasts" setting, W-04).
+    func removeAll()
 }

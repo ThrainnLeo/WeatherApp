@@ -421,6 +421,312 @@ Template — copy for each component before coding it:
   22.4° → N and 22.5° → NE.
 - Requirements: W-02
 
+> Specs below approved by the students on 2026-11-23 (W-03, branch `feature/W-03-favourites`).
+
+### FavoritesStore (protocol) + UserDefaultsFavoritesStore
+- Owner (responsible for understanding it): _student_
+- Tier: Support
+- Purpose: keep the user's favourite places between app launches (W-03).
+- Inputs / outputs: `load() -> [Place]`, `save(_ places: [Place])`. Stored as one JSON array
+  (`Codable`) in an injected `UserDefaults`, in the order the user added them.
+- Edge cases: nothing saved yet or corrupt / old-format data → empty list, never a crash;
+  a failed save is ignored (the list stays correct in memory for this session).
+- Test ideas (throwaway `UserDefaults(suiteName:)`): save then load gives the same places in the
+  same order; corrupt data → empty list.
+- Requirements: W-03
+
+### FavoritesViewModel
+- Owner (responsible for understanding it): _student_
+- Tier: Core (state)
+- Purpose: the favourites list and its actions, separate from `SearchViewModel` (decision 1).
+- Inputs / outputs: `favorites: [Place]`, `isFavorite(_:)`, `toggle(_:)`, `remove(at:)`,
+  `lastKnownTemperature(for:)`; `@Observable` + `@MainActor`; store and `WeatherRepository` injected
+  (the temperature is read through the repository's new `cachedForecast(for:)`, never straight from
+  the cache, so the layer rule holds). Every change is saved straight away.
+- Edge cases: "same place" = coordinates equal when rounded to 2 decimals (~1 km), the same rule as
+  the forecast cache, so adding a place twice keeps one entry (decision 4); coordinate searches can
+  be favourites, named "59.33, 18.07" (decision 3).
+- Test ideas (fake store): `toggle` adds, a second `toggle` removes; adding the same place twice
+  gives one entry; `isFavorite` is true for a place ~500 m from a saved one; `remove(at:)` removes
+  the right place and the store is saved.
+- Requirements: W-03, W-17
+
+### SearchViewModel (current place) + FavoritesView + star button
+- Tier: Core (`currentPlace`) / Boilerplate (views)
+- Purpose: `SearchViewModel.currentPlace` is the place whose forecast is shown (from a place search,
+  or a `Place` named by its coordinates). A star next to the place name toggles it. A toolbar button
+  opens `FavoritesView` as a sheet (decision 2): name, region and the last known temperature from the
+  forecast cache, if any (decision 5); tap → sheet closes and the forecast loads; swipe to delete.
+- Edge cases: no star unless a forecast is shown (so Paris can't be added); empty list →
+  "No favourites yet. Tap ★ on a forecast to add one."; opening a favourite offline shows cached data
+  with the banner; reopening the last place at launch is not part of this (decision 6).
+- Test ideas: none automated for the views (UX scenarios go to TEST_REPORT, W-18).
+- Requirements: W-03, W-09, W-10
+
+> Spec below approved by Hugo on 2026-11-24 (branch `feature/hugo-final`); Thrainn to review.
+> Choices: light day variant (not the "dark everywhere" fallback); loading and error follow the start screen's sky.
+
+### Day/night sky (time-dependent start screen)
+- Owner (responsible for understanding it): Hugo
+- Tier: Boilerplate (colours, views) · Support (the day-or-night rule and its refresh)
+- Purpose: the start screen follows the time of day: a light day sky between 06:00 and 18:00, the
+  current night sky otherwise (H-02). A sky is a `WeatherTheme`, so the gradient and the colour
+  scheme come from one value and can't disagree.
+- Inputs / outputs:
+  - `WeatherTheme.day` (new case, light blue gradient) and `WeatherTheme.colorScheme: ColorScheme`
+    (`.light` for `.day`, `.dark` for every other theme).
+  - `WeatherTheme.sky(at date: Date, calendar: Calendar = .current) -> WeatherTheme`: `.day` if the
+    local hour is 6…17, else `.night`. Pure function with the date and calendar injected (like
+    `ForecastGrouper`), so a test can pass any time.
+  - `SearchView` holds `@State sky` (the day or night `WeatherTheme`); `theme` returns the sky for every state without a
+    forecast (idle, loading, failed) and the weather's theme once loaded; the fixed
+    `.preferredColorScheme(.dark)` becomes `.preferredColorScheme(theme.colorScheme)`.
+  - `StartView` gets the sky as a parameter: sun symbol (`sun.max.fill`) by day, moon by night.
+  - `FavoritesView` gets the sky as a parameter, sets its own `.preferredColorScheme` and uses the
+    sky gradient instead of the fixed `.night` one (see edge cases).
+- How day and night are decided: the device's local hour from `Calendar.current`, so it follows the
+  phone's time zone. Not sunrise/sunset: `ForecastStep` has no sun data, and no place is chosen yet
+  on the start screen. Known limit: at Nordic latitudes real daylight differs a lot from 06–18
+  (Kiruna: dark all day in December, sun at midnight in June). Accepted for a start screen.
+- How it updates while the app is open: one task on the screen,
+  `.task(id: scenePhase)`. When the scene becomes `.active` the task runs, sets `sky`
+  straight away, then repeats every 60 s with `Task.sleep`; when the app goes to the background the
+  task is cancelled and stops. Coming back to the app therefore corrects the sky at once, and an app
+  left open shifts within a minute of 06:00 / 18:00. `sky` is only written when the value
+  changes (SwiftUI does not compare, so a write every minute would redraw every minute). The
+  existing `.id(theme)` + `.transition(.opacity)` + `.animation(.smooth, value: theme)` cross-fades
+  the gradient. Alternatives not chosen: `TimelineView` with a schedule for the exact 06:00 / 18:00
+  moments (exact, but it must wrap every view that reads the time and is harder to explain);
+  `Timer.publish` + `.onReceive` (works, but adds Combine to an async/await-only codebase).
+- How it works with `.preferredColorScheme(.dark)` (changes decision "App always uses the dark
+  colour scheme", 2026-11-23, which is replaced if this is approved):
+  - A light sky needs dark text, so the day sky can't live under a forced dark scheme. The scheme
+    now follows the theme: `.light` only for `.day`, `.dark` for the night sky and for all weather
+    themes, whose gradients are unchanged (still tuned for white text).
+  - Text (`.primary` / `.secondary`) and the frosted rows adapt by themselves, so no view needs
+    hard-coded colours. Nav bar, status bar and the keyboard follow the scheme.
+  - Cost: during the day the scheme flips light → dark when a forecast arrives (new search from the
+    start screen) and back to light when the user returns to the start screen. The gradient
+    cross-fades but the system's scheme change is a short, separate fade; check on a device how
+    it looks. If it looks bad, fallback (one-line change): keep `.dark` everywhere and make `.day`
+    a bright blue that still holds 4.5:1 for white text (hardly lighter than `.sunny`).
+- Edge cases:
+  - Loading and error screens use the same sky as the start screen. Otherwise a daytime search
+    would go light → night-dark → weather colours.
+  - `FavoritesView` is a sheet that inherits the scheme. With a fixed night gradient it would show
+    dark text on a dark gradient in daytime, so it takes the sky and sets its own scheme. (Check
+    on a device that a sheet honours its own `.preferredColorScheme`.)
+  - A forecast on screen is not affected when 06:00 / 18:00 passes; its weather theme stays.
+  - Time zone or clock change (travel, manual change): the next tick (≤ 60 s) corrects it.
+  - Reduce Motion: the gradient is a cross-fade, which is allowed; the symbol pulse is off as today.
+    The brightness jump at the exact shift is softened by the cross-fade, not removed.
+  - Contrast: day gradient and `.secondary` text on the frosted rows must be checked by eye
+    (also with Increase Contrast); the values in `WeatherTheme` are estimates.
+  - Previews and screenshots at different hours need the sky injected (a parameter), not the real clock.
+- Test ideas (approved by Hugo 2026-11-24, in `WeatherThemeTests`): `sky(at:)` for 05:59 → night,
+  06:00 → day, 17:59 → day, 18:00 → night, 00:00 → night; the same instant gives different
+  answers with a UTC and a Stockholm calendar (the calendar is really used); `colorScheme` is
+  `.light` only for `.day`. The views have no automated tests (UX scenarios go to TEST_REPORT, W-18).
+- Decision log entry to add if approved: "2026-11-24 — Start/loading/error sky follows the time of
+  day; the colour scheme follows the theme (replaces 'app always dark')".
+- Requirements: H-02, W-06
+
+> Spec below approved by Hugo on 2026-11-24 (branch `feature/hugo-final`); Thrainn to review.
+> Choices: `.storm` = denser rain, no lightning; the still frame under Reduce Motion is judged in the
+> simulator; step 6's small items are a separate step after the background.
+
+### Animated weather background (UI polish step 6)
+- Owner (responsible for understanding it): Hugo
+- Tier: Boilerplate (drawing) · Support (layer data, motion maths, pause rules)
+- Purpose: show the weather behind the text, not only as a gradient: drifting clouds (cloudy), falling
+  rain (rain), falling snow (snow), a faint sun glow (sunny), stars (night). SwiftUI only
+  (`TimelineView`, `Canvas`, SF Symbols), no packages (H-02, W-06).
+- Design rules (from Emil's and Apple's motion rules): it is ambient, so slow, low contrast and never
+  on the text; constant motion is linear; nothing pops in (elements enter from outside the screen,
+  stars never go to 0 opacity); no blur (expensive); no flashes, so no lightning for `.storm`.
+- How it connects to `WeatherTheme` (data in the theme, drawing in the view):
+  - `WeatherLayer` (new enum, plain data, `Equatable, Sendable`): `.sunGlow`, `.clouds(count:)`,
+    `.rain(count:)`, `.snow(count:)`, `.stars(count:)`. Each has a `minimumInterval` (seconds between
+    frames). A layer carries no colours or sizes; the view decides how it looks.
+  - `WeatherTheme.layers: [WeatherLayer]` and `WeatherTheme.frameInterval: Double` (the smallest
+    `minimumInterval` of its layers). `gradient` and `colorScheme` stay as they are.
+  - Proposed mapping (counts are starting values, tuned on a device):
+
+    | Theme | Layers | Frame interval |
+    |---|---|---|
+    | `.day` (light) | sun glow, 2 white clouds | 1/20 s |
+    | `.night` | 55 stars (slow twinkle) | 1/10 s |
+    | `.sunny` | sun glow, 1 cloud | 1/20 s |
+    | `.cloudy` | 4 clouds | 1/20 s |
+    | `.rain` | 2 clouds, 40 rain streaks | 1/30 s |
+    | `.snow` | 2 clouds, 36 snowflakes | 1/30 s |
+    | `.storm` | 3 clouds, 70 rain streaks (no lightning) | 1/30 s |
+
+  - `.day` is the only light theme, so its clouds are white with some opacity on the pale blue
+    gradient and its glow is warm; the dark themes use white at low opacity. The layer colours are
+    chosen in the view from `theme.colorScheme`, not stored in the theme.
+- Inputs / outputs:
+  - `WeatherBackground(theme: WeatherTheme, isAnimated: Bool = true, isPaused: Bool = false)` (new view, replaces
+    `theme.gradient.ignoresSafeArea()...`): the gradient plus one `TimelineView(.animation(minimumInterval:
+    theme.frameInterval, paused:))` that draws one `Canvas`. Clouds are the SF Symbol `cloud.fill`,
+    passed to `Canvas` as a symbol so it is resolved once, not every frame.
+  - Every element is a pure function of time, a seed and the canvas size (for example
+    `y = (startY + speed · t) mod (height + margin)`); there is no per-frame state. A seeded generator
+    gives each element its fixed start position, speed and phase, so rotation, iPad resizing and
+    returning from the background need no special code. Wrapping lives in a pure helper.
+  - Also new: `WeatherParticle` (the fixed start values of one element, made from a seed, with a pool
+    per layer kind from which a layer takes its first `count`), `WeatherMotion` (wrapping and
+    position, pure), `SeededGenerator` (a small repeatable random generator), and
+    `WeatherLayerRenderer` (the `Canvas` drawing, `nonisolated`, so the `Canvas` closure has no actor
+    isolation to cross). All in `Views/`, next to `WeatherTheme`.
+  - `SearchView` uses `WeatherBackground(theme: theme)`; the existing `.id(theme)` +
+    `.transition(.opacity)` + `.animation(.smooth, value: theme)` cross-fades gradient and layers
+    together. `DayDetailView` and `FavoritesView` use `isAnimated: false` (gradient only), so only one
+    animated background exists and the secondary screens stay calm.
+- Reduce Motion and battery (the background pauses, and a paused `TimelineView` draws one still frame):
+  - Reduce Motion on (`accessibilityReduceMotion`) → paused: a still frame of the same layers; the
+    theme cross-fade stays (it is opacity only).
+  - Low Power Mode on → paused, the same still frame. Read with `ProcessInfo.isLowPowerModeEnabled`
+    and updated from `NSProcessInfoPowerStateDidChange` (a `.task` over `NotificationCenter.notifications`).
+  - App not `.active` (`scenePhase`) → paused.
+  - Who decides (changed 2026-11-24 after the performance review): `SearchView` decides, once, from
+    Reduce Motion, Low Power Mode, `scenePhase` and whether something covers it, and hands the result
+    to `WeatherBackground(isPaused:)`. `WeatherBackground` itself holds no state, no environment reads
+    and no task, so the gradient-only backgrounds (day detail, favourites sheet) cost nothing extra and
+    there is one Low Power Mode listener in the app, not one per background.
+  - Frame rate is capped per theme (table above): a slow cloud needs 20 fps, not 60; stars 10 fps.
+  - Budget: at most 80 moving elements per theme; one `Canvas` pass; no blur, no per-frame view updates.
+  - Covered → paused: while the favourites sheet is open or a day detail is pushed, the main
+    background is paused. `SearchView` knows both: `showingFavorites`, and a `NavigationStack(path:)`
+    it owns (`[DailyForecast]`), which is not empty while a detail is shown. To be confirmed with the
+    CPU gauge on a device. Acceptance: Xcode's Energy Impact stays "Low" on a real device after a few
+    minutes on each theme. The Simulator is not representative for this.
+- Edge cases: the text stays readable (cloud opacity ≤ about 0.15 on dark themes, rain streak ≤ 0.3,
+  checked by eye, also with Increase Contrast; the hero block sits directly on the background, so it
+  is the place to check); rows are frosted material, which also softens what moves behind them;
+  `allowsHitTesting(false)` and `accessibilityHidden(true)` on the background; a theme change mid-flight
+  starts the new layers at whatever phase the shared clock gives; Reduce Motion or Low Power Mode
+  switched on while the screen is open pauses immediately; large `Date` values are fine in `Double`.
+- Test ideas (approved by Hugo 2026-11-24, in `WeatherLayerTests` and `WeatherMotionTests`): `WeatherTheme.layers` mapping
+  (rain has rain, night has stars, cloudy has clouds, day and sunny have the sun glow, storm has no
+  flash layer); budget (every theme ≤ 80 elements, no `frameInterval` below 1/30 s, i.e. never more
+  than 30 fps); the wrapping helper (an element that has fallen one full cycle is back at the top and
+  never ends up outside the margin); the seeded generator gives the same positions for the same seed.
+  The views have no automated tests (UX scenarios go to TEST_REPORT, W-18).
+- Maybe later: a "Animated background" switch on the settings screen (W-04).
+- Requirements: H-02, W-06
+
+> Step 6, small items (approved by Hugo 2026-11-24 as a separate step after the background):
+> `.contentTransition(.numericText())` on the hero temperature; `.symbolEffect(.bounce)` and
+> `.sensoryFeedback(.selection)` when the favourite star is toggled; `.sensoryFeedback(.error)` when a
+> search fails. Not proposed: a success haptic on every loaded forecast (over-feedback; Apple's rule
+> is to keep haptics for meaningful moments).
+
+> Spec below approved by Hugo on 2026-11-24 (W-04 settings, branch `feature/W-04-settings`); Thrainn to review.
+> Choices: 1 hour as the default refresh; the "Updated" text is enough to show the age of a reused forecast.
+
+### Settings screen (W-04)
+- Owner (responsible for understanding it): Hugo
+- Tier: Core (the "reuse a fresh saved forecast" rule in `WeatherRepository`, and how `SearchViewModel`
+  uses it) · Support (`RefreshPolicy`, `SettingsViewModel`, `CacheStore.removeAll`) · Boilerplate
+  (`SettingsView`, the gear button, the "Updated" text)
+- Purpose: let the user choose how often the app asks SMHI for new data, and a few UI preferences.
+  Three settings, no unit switching (°C/°F, m/s) — decided by the students on 2026-11-24 because
+  `TemperatureText` is used in nearly every view and the switch would touch them all.
+- **How we read "data refresh rate" (decision, with reasons).** We read it as *how old a saved forecast
+  may be before the app fetches a new one* ("cache age"), not as an automatic reload on a timer.
+  - Why cache age: (1) SMHI renews its forecast about once an hour, and its answers say so
+    (`cache-control: max-age=3600`), so asking more often returns the same data; (2) it saves network
+    use and battery, which we have just worked to reduce (the performance review of the animated
+    background); (3) it works offline and with the existing fallback (W-09, W-10); (4) the decision log
+    already says "a 'use cache if fresh' rule comes with the refresh-rate setting (W-04)", and today the
+    repository always tries the network first; (5) a user always keeps full control, because pull to
+    refresh and "Try again" always fetch new data.
+  - Not chosen: a timer that reloads while the app is open. It costs battery, needs a task to manage
+    (cancel, pause in the background, avoid doubles), and the data it fetches would normally be
+    unchanged.
+- The three settings:
+  1. **Refresh forecast** (`RefreshPolicy`): Always · 15 min · 1 hour (default) · 3 hours. A saved
+     forecast younger than this is shown without contacting SMHI. "Always" is today's behaviour.
+     On screen it is worded "Reuse saved forecast for": Never · 15 minutes · 1 hour · 3 hours, because
+     "refresh every hour" would sound like a timer (changed when the screen was built, 2026-11-24).
+  2. **Animated background**: on (default) / off. Off draws the gradient only (no layers, no timeline).
+     It is separate from Reduce Motion and Low Power Mode, which still pause the layers when it is on.
+  3. **Clear saved forecasts**: removes the forecasts saved for offline use, after a confirmation.
+- Inputs / outputs:
+  - `RefreshPolicy` (new enum, `Int` raw values so `@AppStorage` can store it): `maxCacheAge: TimeInterval`
+    (0, 900, 3600, 10800 s); `RefreshPolicy.key`; `RefreshPolicy.stored(in:)` (reads `UserDefaults`, the
+    default argument is `.standard` so a test can pass its own; a missing or unknown value gives
+    `.hour1`; a missing value is not read as `0`, which would mean "Always").
+  - `WeatherRepository.forecast(for:reusingCacheYoungerThan:)` (the new parameter is `TimeInterval?`,
+    `nil` = never reuse, i.e. always fetch). If a saved forecast exists and `now − fetchedAt` is below
+    the limit, it is returned at once as `ForecastResult(forecast, fetchedAt: <its original time>,
+    staleReason: nil)`, with no request and no new save. Otherwise as today: fetch, parse, save, and on
+    failure fall back to the saved forecast with `staleReason`.
+  - `SearchViewModel` gets `refreshPolicy: () -> RefreshPolicy` (injected, default
+    `RefreshPolicy.stored()`, the same way `now` is injected). Choosing a place, a coordinate search and
+    opening a favourite pass `refreshPolicy().maxCacheAge`; pull to refresh and "Try again" pass `nil`.
+  - `CacheStore.removeAll()` (new protocol method) and `UserDefaultsCacheStore.removeAll()`: removes
+    only the keys that start with `forecast.`, so favourites and settings are kept.
+    `WeatherRepository.clearSavedForecasts()` forwards it.
+  - `SettingsViewModel` (new, `@Observable` + `@MainActor`, repository injected): `clearSavedForecasts()`.
+    The "cleared" text is `@State` in the view (changed when built, 2026-11-24): a flag in the ViewModel
+    would live as long as the app and show the text the next time the sheet opens. The View never
+    touches the repository.
+  - `SettingsView(sky:)`: a sheet like `FavoritesView` (`NavigationStack`, `Form`, "Done", the sky
+    gradient, its own colour scheme from `sky`). The refresh picker and the animation switch use
+    `@AppStorage` (decision log: "Settings stored with `@AppStorage`"), with `RefreshPolicy.key` shared
+    with the ViewModel's default. Opened with a gear button (`gearshape`) in the toolbar next to the
+    favourites button. `SearchView` reads `@AppStorage("animatedBackground")` for `isAnimated`.
+- **"Updated" text:** below the weather summary in the hero block: "Updated 14:15" (`fetchedAt`,
+  short time), caption size, secondary colour. Shown for every loaded forecast whose `staleMessage` is
+  `nil`; when the offline banner is shown it already says "showing data from 14:15", so no second
+  line. A reused saved forecast shows its original time, so it is clear why nothing changed. Part of
+  the hero's combined VoiceOver text.
+- **What happens to the favourites' last known temperature when the forecasts are cleared:**
+  - The favourites list itself is unchanged: it is stored separately (`UserDefaultsFavoritesStore`).
+  - `FavoritesViewModel.lastKnownTemperature` reads the saved forecast, which is gone, so it returns
+    `nil` and the row simply shows no temperature (the view already hides the number when it is `nil`).
+    No placeholder, no error.
+  - A temperature comes back for a place the next time that place is loaded (every successful load
+    saves again): open the favourite, or search for it.
+  - `FavoritesView` reads the cache when it is drawn, and Settings and Favourites are separate sheets,
+    so the list is always drawn after the clearing; no refresh signal is needed.
+  - The confirmation text says so: "Saved forecasts are used when you are offline. Favourites are
+    kept. Offline, a place shows nothing until you have loaded it again."
+- Edge cases:
+  - A saved forecast with `fetchedAt` in the future (the clock was set back) is not reused: age < 0
+    counts as old, so the app fetches.
+  - The limit is checked when a place is chosen; changing the setting does not reload what is on screen.
+  - A saved forecast within the limit is also used offline (it never needed the network), so W-10
+    still holds; an older one offline falls back as today, with the banner.
+  - Clearing while a request is running: that request saves its result afterwards, so one forecast can
+    reappear. Accepted.
+  - The forecast on screen stays when the saved ones are cleared. Pull to refresh offline right after
+    clearing then has no saved forecast to fall back on and shows the error screen (the existing rule
+    "no cache, no data"); the confirmation text above warns about it.
+  - First launch: refresh 1 hour, animation on.
+  - Reduce Motion and Low Power Mode keep working whatever the animation switch says.
+- Test ideas (approved by Hugo 2026-11-24; `FakeAPIClient` gets a call counter
+  and `FakeCacheStore` a `removeAll`, both in the test target):
+  - Repository: a saved forecast younger than the limit gives no request, `staleReason == nil` and its
+    original `fetchedAt`; an older one fetches; `nil` fetches even if the saved one is fresh; a future
+    `fetchedAt` fetches; an older one with a failing request still falls back with `staleReason`; a
+    reused forecast is not saved again.
+  - `RefreshPolicy`: the four `maxCacheAge` values; an unknown raw value gives `.hour1`.
+  - `UserDefaultsCacheStore.removeAll`: removes `forecast.*` keys and keeps another key (a throwaway
+    `UserDefaults(suiteName:)`).
+  - `FavoritesViewModel`: after the cache is cleared `lastKnownTemperature` is `nil` and the favourites
+    are unchanged.
+  - `SearchViewModel` (it has no tests yet): choosing a place with a fresh saved forecast makes no
+    request, pull to refresh makes one.
+  - The views have no automated tests (UX scenarios go to TEST_REPORT, W-18).
+- Steps (small, each explained and checked in the simulator before the next): 1) this spec; 2) `RefreshPolicy`
+  and the repository rule with tests; 3) `SearchViewModel` wiring and the "Updated" text;
+  4) `SettingsView`, the gear button and the animation switch; 5) clearing saved forecasts
+  (`CacheStore.removeAll`, `SettingsViewModel`) with tests; 6) SPEC plan, update log and decision log.
+- Requirements: W-04, W-09, W-10, H-02
+
 ## 5. Open questions
 - [x] Which forecast + geocoding API? → SMHI snow1g + geocode.maps.co (§6)
 - [x] KTH proxy format (old pmp3g or new snow1g)? → no longer relevant: we use the real
@@ -522,7 +828,7 @@ Template — copy for each component before coding it:
     when called from the main actor (approachable concurrency setting); only `@concurrent` moves
     parsing off the main thread (W-15).
 
-- **2026-11-23 — App always uses the dark colour scheme**
+- **2026-11-23 — App always uses the dark colour scheme** *(superseded 2026-11-24, see "Start/loading/error sky follows the time of day" below)*
   - `.preferredColorScheme(.dark)` in `SearchView`; gradients are fixed colours, not light/dark pairs.
   - Alternatives: light and dark gradient pairs; dark only while a forecast is shown
   - Why: white text on every gradient with no hard-coded text colours, and no grey → colour flash
@@ -541,6 +847,29 @@ Template — copy for each component before coding it:
   - Tried five (Stockholm, Oslo, Helsinki, Copenhagen, Kiruna) and removed them on our decision.
   - Note: Reykjavik is outside SMHI's forecast area (404), so Iceland can't be offered.
 
+- **2026-11-24 — Start/loading/error sky follows the time of day; the colour scheme follows the theme**
+  - `WeatherTheme.sky(at:)` gives `.day` from 06:00 up to 18:00 local time, else `.night`; `SearchView`
+    keeps it fresh with `.task(id: scenePhase)` (checked every 60 s while the app is active, and
+    at once when the app returns). `WeatherTheme.colorScheme` is `.light` for `.day` and `.dark`
+    for everything else; `SearchView` and `FavoritesView` use it in `.preferredColorScheme`.
+    Replaces "App always uses the dark colour scheme" (2026-11-23).
+  - Alternatives: keep `.dark` everywhere with a bright blue day sky (fallback, not needed);
+    `TimelineView` with a schedule for the exact shift; `Timer.publish` + `.onReceive`;
+    real sunrise/sunset (no sun data in `ForecastStep`, no place on the start screen).
+  - Why: the students wanted a light screen by day. One theme value decides both gradient and
+    scheme, so they can't disagree; loading and error use the same sky, so a daytime search does
+    not go light → night-dark → weather colours.
+  - Consequence: during the day the scheme flips light → dark when a forecast arrives. Seen in the
+    simulator 2026-11-24: a soft cross-fade, with a slight blink, judged acceptable. Clock hours
+    are wrong at Nordic latitudes (dark all day in Kiruna in December); accepted for a start screen.
+
+- **2026-11-24 — "Refresh rate" means the age of the saved forecast, not a timer (W-04)**
+  - Choice: Never · 15 minutes · 1 hour (default) · 3 hours; pull to refresh and "Try again" always ask SMHI.
+  - Alternatives: a timer that reloads while the app is open
+  - Why: SMHI renews its forecast about once an hour (`cache-control: max-age=3600`), so asking more often
+    returns the same data; it saves network and battery, works offline and fits the cache fallback (W-09, W-10).
+  - Consequence: a reused forecast can be up to the chosen age old; the "Updated 14:15" text shows when it came.
+
 ## 7. Oral exam map
 Fill in as components are completed. Q26 is always asked first.
 
@@ -555,7 +884,7 @@ Fill in as components are completed. Q26 is always asked first.
 | Q7 | Where fetched data lives at runtime (declaration) | data lives in SearchViewModel.state.| |
 | Q8 | What happens to displayed data on a new search | a new search sets .loading and clears the old place.| |
 | Q9 | How the UI learns new data arrived | @Observable.| |
-| Q10 | State preserved when leaving/returning to the app | | |
+| Q10 | State preserved when leaving/returning to the app | state kept when leaving and returning to the app): favourites are in UserDefaults and survive a restart| |
 | Q11 | Loading state; avoiding stale data during a request | the loading state.| |
 | Q12 | Two rapid searches — race condition guard | two quick searches. You search Stockholm (slow network), then Kiruna (fast). The request-ID guard. | |
 | Q13 | Request timeout — what is displayed | 15 s in `SMHIAPIClient.makeSession()` → `URLError.timedOut` → `WeatherError.timeout` → repository falls back to the cache (`staleReason == .timeout`) or throws. *Display: ViewModel, not built yet.* | W-16 · `timedOutIsTimeout` |
@@ -564,12 +893,12 @@ Fill in as components are completed. Q26 is always asked first.
 | Q16 | No internet, after earlier successful load | `WeatherRepository.forecast(for:)` `catch`: returns the cached forecast with its old `fetchedAt` and `staleReason == .offline` | W-10 · `offlineWithCacheReturnsCachedForecast` |
 | Q17 | Where error state is declared and how it reaches the UI | Declared in `Models/WeatherError.swift`; reaches the ViewModel as `throws(WeatherError)` or `ForecastResult.staleReason`. *ViewModel/UI part not built yet.* | W-16 |
 | Q18 | Hardest error case | Candidate: "HTTP 200 but broken JSON while a cache exists": `WeatherRepository.fetchFresh` saves only after parsing succeeds, so the good cache survives | W-10 · `invalidJSONWithCacheReturnsCacheAndKeepsIt` |
-| Q19 | MVVM layers in the code | the MVVM layers. `SearchView` only reads `viewModel.state` and picks a `WeatherTheme`; no network or parsing in the views| |
-| Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel. `StartView`, `ForecastSkeletonView` and `WeatherTheme` are pure drawing; `SearchView` forwards taps to the ViewModel| |
+| Q19 | MVVM layers in the code | the MVVM layers. `SearchView` only reads `viewModel.state` and picks a `WeatherTheme`; no network or parsing in the views| FavoritesView only displays; the logic is in the ViewModel and the store.|
+| Q20 | Why the network call is not in the View | the network call isn't in the View; the View only talks to the ViewModel. `StartView`, `ForecastSkeletonView` and `WeatherTheme` are pure drawing; `SearchView` forwards taps to the ViewModel| FavoritesView only displays; the logic is in the ViewModel and the store.|
 | Q21 | Where testable logic is separated from UI | The parser is a plain struct with no UI and no network. A pure function with no UI | |
 | Q22 | How navigation works; why the ViewModel doesn't navigate | the ViewModel has no navigation code.| navigation lives in SearchView (navigationDestination). The ViewModel has no navigation code|
-| Q23 | One requirement ID → implementing code | a new screen came from the existing DailyForecast.steps, without any change to networking or parsing| |
-| Q24 | Architecture changes for adding hourly forecast | the grouper already produces hourly data for today, so the architecture change would be in this file.| |
+| Q23 | One requirement ID → implementing code | | |
+| Q24 | Architecture changes for adding hourly forecast | the grouper already produces hourly data for today, so the architecture change would be in this file.| a new screen came from the existing DailyForecast.steps, without any change to networking or parsing|
 | Q25 | A function the AI helped write — line by line | parse and makeStep are good candidates| |
 | Q26 | AI meta-instructions + one requirement → code | §1 + | |
 | Q27 | Where we pushed back on the AI, and why | Example: removed the quick-pick buttons; the AI first suggested Reykjavik, which SMHI does not cover | |
@@ -586,6 +915,8 @@ Fill in as components are completed. Q26 is always asked first.
 | 4 | Grouping: hourly today / daily rest, in the user's time zone (W-07, W-17 data transformation) | | ☐ |
 | 5 | ViewModel state machine incl. race-condition guard; first search screen (W-01, W-10, W-15, W-16) | | ☐ |
 | 6 | UI polish: hero block, weather-driven background, start screen, loading and error states (W-01, W-06, H-02) | Hugo | ◐ steps 1, 2, 3, 5 done; 4, 6, 7 left; teach-back and PR review pending |
+| 8 | Day/night sky: start, loading and error screens follow the time of day; colour scheme follows the theme; 4 tests (13 cases) (H-02) | Hugo | ◐ code + tests done; teach-back and PR review pending |
+| 9 | Settings screen: refresh by saved-forecast age, animated-background switch, clear saved forecasts, "Updated" text; 18 tests (25 cases) (W-04) | Hugo | ◐ code + tests done; teach-back and PR review pending |
 
 ## 9. End-of-session ritual + update log
 After every session:
@@ -606,6 +937,8 @@ After every session:
 | 2026-11-20 | Thrainn | Session 2: SMHI DTO, domain models and ForecastParser (9999 → nil, skipped steps, sorting); 7 parser tests with a real Stockholm fixture. | W-05, W-12, W-17 |
 | 2026-11-20 | Thrainn | Session 3: API client, WeatherError classification, UserDefaults cache and WeatherRepository with cache fallback (`@concurrent`); 11 tests with fakes. | W-05, W-09, W-10, W-15, W-16, W-17 |
 | 2026-11-23 | Hugo | Session 6: UI polish on `feature/ui-polish`: hero block, gradient background per weather (`WeatherTheme`), frosted rows, multicolor symbols, start screen with night sky, redacted loading skeleton and `ContentUnavailableView` for errors. No ViewModel or test changes. | W-01, W-06, H-02 |
+| 2026-11-24 | Hugo | Session 8: time-dependent sky on `feature/hugo-final`: `WeatherTheme.day`, `colorScheme` per theme and `sky(at:)` (06:00–18:00 local time), kept fresh with `.task(id: scenePhase)`; start/loading/error screens and the favourites sheet follow it; replaces "app always dark". 4 new tests (13 cases) in `WeatherThemeTests`. | H-02 |
+| 2026-11-24 | Hugo | Session 9: settings screen (W-04) on `feature/W-04-settings`: `RefreshPolicy` and a repository rule that reuses a saved forecast younger than the chosen age; `SettingsView` (gear button) with the refresh choice, an animated-background switch and "Clear saved forecasts" with confirmation; "Updated" text under the hero block. 18 new tests (25 cases): `RefreshPolicy`, repository reuse, `SearchViewModel`, cache store and a favourites test. | W-04, W-09, W-10 |
 
 ## 10. AI usage summary
 Which parts were AI-assisted, which tools and prompts were used (details in `docs/LLM_PROCESS.md`).

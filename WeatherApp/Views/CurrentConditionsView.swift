@@ -7,6 +7,12 @@ struct CurrentConditionsView: View {
     /// Range over the hours left today; `nil` when there are none (late evening).
     let high: Double?
     let low: Double?
+    /// Shows a star next to the title when set (W-03). `nil` hides it, e.g. in previews.
+    var isFavorite = false
+    var onToggleFavorite: (() -> Void)? = nil
+    /// When the forecast was downloaded, shown as "Updated 14:15" (W-04). `nil` hides the line, e.g.
+    /// when the offline banner already says "showing data from 14:15".
+    var updatedAt: Date? = nil
 
     // @ScaledMetric makes these sizes follow the user's Dynamic Type setting; a plain number
     // in `.system(size:)` would stay the same however large the user has set their text.
@@ -15,9 +21,32 @@ struct CurrentConditionsView: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(title)
-                .font(.title2.weight(.semibold))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                if let onToggleFavorite {
+                    Button(action: onToggleFavorite) {
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(.yellow)
+                            .font(.title3)
+                    }
+                    // Borderless: only the star reacts to taps, not the whole list row.
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(isFavorite ? "Remove from favourites" : "Add to favourites")
+                }
+            }
 
+            weatherSummary
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
+    /// Everything below the title, read by VoiceOver as one element. The star stays a separate,
+    /// tappable element; combining it in would hide it as a button.
+    private var weatherSummary: some View {
+        VStack(spacing: 4) {
             Image(systemName: step.condition.symbolName)
                 .symbolRenderingMode(.multicolor)
                 .font(.system(size: symbolSize))
@@ -43,9 +72,15 @@ struct CurrentConditionsView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+
+            // A saved forecast that was reused shows its original time, so it is clear why nothing changed.
+            if let updatedAt {
+                Text("Updated \(updatedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
     }
 }

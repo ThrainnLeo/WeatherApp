@@ -24,4 +24,8 @@ nonisolated final class FakeCacheStore: CacheStore {
     func load(for coordinate: Coordinate) -> CachedForecast? {
         entries.withLock { $0[coordinate] }
     }
+
+    func removeAll() {
+        entries.withLock { $0.removeAll() }
+    }
 }
